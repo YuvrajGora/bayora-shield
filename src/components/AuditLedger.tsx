@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../services/api.ts';
-import { AuditLogEntry, AuditEventType, AuditSeverity } from '../types/index.ts';
-import { FileText, Search, Filter, Download, RefreshCw, AlertTriangle, ShieldX, CheckCircle, Info, Lock } from 'lucide-react';
+import { useAuth } from '../context/AuthContext.tsx';
+import { AuditLogEntry, AuditEventType, AuditSeverity, AuditIntegrityReport } from '../types/index.ts';
+import { FileText, Search, Filter, Download, RefreshCw, AlertTriangle, ShieldX, CheckCircle, Info, Lock, ShieldCheck, Hash, AlertOctagon } from 'lucide-react';
 
 export const AuditLedger: React.FC = () => {
+  const { user } = useAuth();
   const [logs, setLogs] = useState<AuditLogEntry[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -15,6 +17,26 @@ export const AuditLedger: React.FC = () => {
 
   // Selected entry for JSON inspector
   const [selectedEntry, setSelectedEntry] = useState<AuditLogEntry | null>(null);
+
+  // SEC-03: Audit Hash-Chain Integrity Verification State
+  const [integrityReport, setIntegrityReport] = useState<AuditIntegrityReport | null>(null);
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [verifyError, setVerifyError] = useState<string | null>(null);
+
+  const canVerifyIntegrity = user?.role === 'admin' || user?.role === 'blue_team';
+
+  const handleVerifyChain = async () => {
+    try {
+      setIsVerifying(true);
+      setVerifyError(null);
+      const report = await api.verifyAuditIntegrity();
+      setIntegrityReport(report);
+    } catch (err: any) {
+      setVerifyError(err.message || 'Failed to verify audit hash chain');
+    } finally {
+      setIsVerifying(false);
+    }
+  };
 
   const fetchLogs = async () => {
     try {
@@ -110,6 +132,17 @@ export const AuditLedger: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
+          {canVerifyIntegrity && (
+            <button
+              onClick={handleVerifyChain}
+              disabled={isVerifying}
+              className="px-3 py-1.5 bg-emerald-950/60 hover:bg-emerald-900/80 border border-emerald-500/50 text-emerald-300 rounded text-xs font-medium flex items-center gap-1.5 transition-colors disabled:opacity-50"
+              title="Verify cryptographic SHA-256 hash-chain integrity of all audit entries"
+            >
+              <ShieldCheck className={`w-3.5 h-3.5 ${isVerifying ? 'animate-spin' : ''}`} />
+              {isVerifying ? 'Verifying Chain...' : 'Verify Hash-Chain'}
+            </button>
+          )}
           <button
             onClick={handleExportCsv}
             className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded text-xs font-medium flex items-center gap-1.5 transition-colors"
@@ -126,6 +159,52 @@ export const AuditLedger: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* Cryptographic Hash-Chain Verification Report */}
+      {integrityReport && (
+        <div
+          className={`p-3.5 rounded border text-xs ${
+            integrityReport.valid
+              ? 'bg-emerald-950/30 border-emerald-800/80 text-emerald-200'
+              : 'bg-rose-950/40 border-rose-800 text-rose-200'
+          }`}
+        >
+          <div className="flex items-start gap-2.5">
+            {integrityReport.valid ? (
+              <ShieldCheck className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
+            ) : (
+              <AlertOctagon className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
+            )}
+            <div className="space-y-1 w-full">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-sm">
+                  {integrityReport.valid
+                    ? 'Cryptographic Hash-Chain Verified: Ledger Intact'
+                    : 'INTEGRITY VIOLATION DETECTED: Tamper Detected'}
+                </span>
+                <span className="text-[11px] text-slate-400 font-mono">
+                  Verified at: {new Date(integrityReport.verifiedAt).toLocaleTimeString()}
+                </span>
+              </div>
+              <p className="text-xs">
+                {integrityReport.valid
+                  ? `All ${integrityReport.verifiedEntries} of ${integrityReport.totalEntries} entries successfully validated against SHA-256 sequential block hashes. No tampering or sequence gaps detected.`
+                  : `${integrityReport.reason} Expected: ${integrityReport.expectedHash} | Found: ${integrityReport.actualHash}`}
+              </p>
+              <div className="pt-1.5 border-t border-slate-800/60 text-[11px] text-slate-400 font-sans">
+                <strong className="text-slate-300">Tamper-Evident Architecture Limitation:</strong> The SHA-256 chain links each event sequentially to detect any modification or reordering. On local storage, this is tamper-evident (detectable modification); it is not external hardware WORM immutability.
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {verifyError && (
+        <div className="p-3 bg-rose-950/40 border border-rose-800 text-rose-300 rounded text-xs flex items-center gap-2">
+          <AlertOctagon className="w-4 h-4 text-rose-400 shrink-0" />
+          <span>Verification failed: {verifyError}</span>
+        </div>
+      )}
 
       {/* Filter Bar */}
       <div className="bg-[#0b1120] border border-slate-800 rounded p-3 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
@@ -217,6 +296,7 @@ export const AuditLedger: React.FC = () => {
                   <th className="py-2 px-3 font-semibold">Actor</th>
                   <th className="py-2 px-3 font-semibold">Resource</th>
                   <th className="py-2 px-3 font-semibold">Decision</th>
+                  <th className="py-2 px-3 font-semibold">SHA-256 Hash</th>
                   <th className="py-2 px-3 font-semibold">Details</th>
                   <th className="py-2 px-3 font-semibold text-right">Inspect</th>
                 </tr>
@@ -277,6 +357,20 @@ export const AuditLedger: React.FC = () => {
                       </span>
                     </td>
 
+                    {/* SHA-256 Hash */}
+                    <td className="py-2.5 px-3 whitespace-nowrap text-[10px] font-mono">
+                      {entry.hash ? (
+                        <span
+                          className="text-cyan-400 bg-cyan-950/50 border border-cyan-800/50 px-1.5 py-0.5 rounded"
+                          title={`Hash: ${entry.hash}\nPrevious: ${entry.previousHash || 'GENESIS'}`}
+                        >
+                          #{entry.hash.substring(0, 8)}…
+                        </span>
+                      ) : (
+                        <span className="text-slate-600">Unchained</span>
+                      )}
+                    </td>
+
                     {/* Details */}
                     <td className="py-2.5 px-3 font-sans text-slate-300 text-xs max-w-xs truncate" title={entry.details}>
                       {entry.details}
@@ -335,6 +429,22 @@ export const AuditLedger: React.FC = () => {
                 <span className="font-mono text-slate-200 mt-0.5 block">
                   {selectedEntry.targetResource} → <strong className="text-white">{selectedEntry.decision}</strong>
                 </span>
+              </div>
+
+              {/* Hash-Chain Verification in Modal */}
+              <div className="p-2.5 bg-slate-900 border border-slate-800 rounded space-y-1">
+                <span className="text-slate-400 block text-[11px] flex items-center gap-1 font-semibold">
+                  <Hash className="w-3.5 h-3.5 text-cyan-400" />
+                  SHA-256 Hash-Chain Linkage
+                </span>
+                <div className="text-[11px] font-mono break-all text-cyan-300">
+                  <span className="text-slate-500">Block Hash: </span>
+                  {selectedEntry.hash || 'None'}
+                </div>
+                <div className="text-[11px] font-mono break-all text-slate-400">
+                  <span className="text-slate-500">Previous Hash: </span>
+                  {selectedEntry.previousHash || '0000000000000000000000000000000000000000000000000000000000000000 (GENESIS)'}
+                </div>
               </div>
 
               <div>

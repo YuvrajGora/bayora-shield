@@ -12,7 +12,7 @@
       "category": "System Leakage",
       "createdAt": "2026-10-19T08:00:00.000Z",
       "updatedAt": "2026-10-19T08:00:00.000Z",
-      "hitCount": 15,
+      "hitCount": 14,
       "createdBy": "blueteam@bayora.shield"
     },
     {
@@ -95,8 +95,8 @@
       "createdBy": "usr-red-02",
       "createdByEmail": "redteam@bayora.shield",
       "createdRole": "red_team",
-      "createdAt": "2026-10-19T15:36:01.210Z",
-      "completedAt": "2026-10-19T15:36:02.210Z",
+      "createdAt": "2026-10-19T18:17:56.514Z",
+      "completedAt": "2026-10-19T18:17:57.515Z",
       "notes": "Clean baseline probe verification."
     },
     {
@@ -126,8 +126,8 @@
       "createdBy": "usr-red-02",
       "createdByEmail": "redteam@bayora.shield",
       "createdRole": "red_team",
-      "createdAt": "2026-10-19T16:36:01.210Z",
-      "completedAt": "2026-10-19T16:36:02.010Z",
+      "createdAt": "2026-10-19T19:17:56.515Z",
+      "completedAt": "2026-10-19T19:17:57.315Z",
       "notes": "Blocked by gateway policy before simulator dispatch."
     },
     {
@@ -142,11 +142,89 @@
       "createdBy": "usr-red-02",
       "createdByEmail": "redteam@bayora.shield",
       "createdRole": "red_team",
-      "createdAt": "2026-10-19T17:34:01.210Z",
+      "createdAt": "2026-10-19T20:15:56.515Z",
       "notes": "Active Red Team test probe currently sealed under evaluation quarantine."
     }
   ],
   "auditLogs": [
+    {
+      "id": "audit-1792441081576-3233k",
+      "timestamp": "2026-10-19T20:18:01.576Z",
+      "eventType": "SECURITY_TEST_SUITE_RUN",
+      "severity": "WARNING",
+      "actorEmail": "admin@bayora.shield",
+      "actorRole": "admin",
+      "targetResource": "/api/system/reset",
+      "decision": "RECORDED",
+      "details": "System rules and runs were reset to demonstration defaults. Historical audit log chain was preserved intact.",
+      "previousHash": "a18871fc1ea338e6ba956e5a8ce87b8385f32affa16a9074f9cc4c64e75ed731",
+      "hash": "4b738cc0db2faae21e17415bd5006be39145bcc9e21864bee91bc340cfb54a75"
+    },
+    {
+      "id": "audit-1792441081570-f1sr6",
+      "timestamp": "2026-10-19T20:18:01.570Z",
+      "eventType": "SESSION_LOGIN",
+      "severity": "INFO",
+      "actorEmail": "admin@bayora.shield",
+      "actorRole": "admin",
+      "targetResource": "/api/auth/login",
+      "decision": "PERMITTED",
+      "details": "User Alex Vance (admin@bayora.shield) authenticated with role [admin]. Cryptographic session established.",
+      "previousHash": "0d795878af0d44a36f67ed61c00dafcebe54da4b3fd71006ab458ceb4e1e51dc",
+      "hash": "a18871fc1ea338e6ba956e5a8ce87b8385f32affa16a9074f9cc4c64e75ed731"
+    },
+    {
+      "id": "audit-1792441081531-8c6ap",
+      "timestamp": "2026-10-19T20:18:01.531Z",
+      "eventType": "SESSION_LOGIN",
+      "severity": "INFO",
+      "actorEmail": "blueteam@bayora.shield",
+      "actorRole": "blue_team",
+      "targetResource": "/api/auth/login",
+      "decision": "PERMITTED",
+      "details": "User Cypher Stone (Blue Lead) (blueteam@bayora.shield) authenticated with role [blue_team]. Cryptographic session established.",
+      "previousHash": "5fb24eaee04db9ec3b73d7c0fc412bd3c39df438eaca08a4c0320f6f4dfbee96",
+      "hash": "0d795878af0d44a36f67ed61c00dafcebe54da4b3fd71006ab458ceb4e1e51dc"
+    },
+    {
+      "id": "audit-1792441081493-9g9pa",
+      "timestamp": "2026-10-19T20:18:01.493Z",
+      "eventType": "ACCESS_DENIAL",
+      "severity": "CRITICAL",
+      "actorEmail": "redteam@bayora.shield",
+      "actorRole": "red_team",
+      "targetResource": "/api/audit/verify",
+      "decision": "DENIED",
+      "details": "Access forbidden: Role \"red_team\" attempted unauthorized access to protected resource GET /api/audit/verify. Required roles: [admin, blue_team].",
+      "previousHash": "6abd3a899d04cc4c2d814a6c2d125611678946dfb45e056e6c0b73861b82527e",
+      "hash": "5fb24eaee04db9ec3b73d7c0fc412bd3c39df438eaca08a4c0320f6f4dfbee96"
+    },
+    {
+      "id": "audit-1792441081490-te4ak",
+      "timestamp": "2026-10-19T20:18:01.490Z",
+      "eventType": "SESSION_LOGIN",
+      "severity": "INFO",
+      "actorEmail": "redteam@bayora.shield",
+      "actorRole": "red_team",
+      "targetResource": "/api/auth/login",
+      "decision": "PERMITTED",
+      "details": "User Raven Vance (Red Lead) (redteam@bayora.shield) authenticated with role [red_team]. Cryptographic session established.",
+      "previousHash": "b8162ce7d569a36f602399b536ec40aaf8bb47223c854c5728640184322a21c9",
+      "hash": "6abd3a899d04cc4c2d814a6c2d125611678946dfb45e056e6c0b73861b82527e"
+    },
+    {
+      "id": "audit-1792441081301-0evpj",
+      "timestamp": "2026-10-19T20:18:01.301Z",
+      "eventType": "ACCESS_DENIAL",
+      "severity": "WARNING",
+      "actorEmail": "unauthenticated@anonymous",
+      "actorRole": "anonymous",
+      "targetResource": "/api/audit/verify",
+      "decision": "DENIED",
+      "details": "Unauthenticated request blocked on protected endpoint GET /api/audit/verify. Missing Authorization header.",
+      "previousHash": "07baecc88611e057adefd85802174ee343b5f0a3b7109d6eb3099f5b0268e7f2",
+      "hash": "b8162ce7d569a36f602399b536ec40aaf8bb47223c854c5728640184322a21c9"
+    },
     {
       "id": "audit-1792431374534-4d19i",
       "timestamp": "2026-10-19T17:36:14.534Z",
@@ -156,7 +234,9 @@
       "actorRole": "red_team",
       "targetResource": "/api/rules",
       "decision": "DENIED",
-      "details": "Access forbidden: Role \"red_team\" attempted unauthorized access to protected resource GET /api/rules. Required roles: [blue_team, admin]."
+      "details": "Access forbidden: Role \"red_team\" attempted unauthorized access to protected resource GET /api/rules. Required roles: [blue_team, admin].",
+      "previousHash": "5fdacafa70937eb2d8f080a66b6143a4d56520d3c3f6dbdc218e3e95a1d84cdc",
+      "hash": "07baecc88611e057adefd85802174ee343b5f0a3b7109d6eb3099f5b0268e7f2"
     },
     {
       "id": "audit-1792431368163-xkt6e",
@@ -171,7 +251,9 @@
       "metadata": {
         "totalTests": 6,
         "passedTests": 6
-      }
+      },
+      "previousHash": "dbd9a5afd160d9f473d889cc5dbb50646537072ad3db0179e715301e8bc21efe",
+      "hash": "5fdacafa70937eb2d8f080a66b6143a4d56520d3c3f6dbdc218e3e95a1d84cdc"
     },
     {
       "id": "audit-1792431368160-4pui6",
@@ -182,7 +264,9 @@
       "actorRole": "red_team",
       "targetResource": "/api/rules",
       "decision": "DENIED",
-      "details": "[Automated Test Suite] Verified Red Team attempt to inspect defensive rules was blocked by server-side policy."
+      "details": "[Automated Test Suite] Verified Red Team attempt to inspect defensive rules was blocked by server-side policy.",
+      "previousHash": "4e6676d365f0c371f4254238a9176c07e286c7ff50619e02b76ed62eee6097d9",
+      "hash": "dbd9a5afd160d9f473d889cc5dbb50646537072ad3db0179e715301e8bc21efe"
     },
     {
       "id": "audit-01",
@@ -193,7 +277,9 @@
       "actorRole": "admin",
       "targetResource": "/api/auth/login",
       "decision": "PERMITTED",
-      "details": "Administrator authenticated successfully via secure demo token."
+      "details": "Administrator authenticated successfully via secure demo token.",
+      "previousHash": "7cab73a98807ec09889c320620538cf4430ffa6016e6407cf6cc8d2fce948053",
+      "hash": "4e6676d365f0c371f4254238a9176c07e286c7ff50619e02b76ed62eee6097d9"
     },
     {
       "id": "audit-02",
@@ -204,7 +290,9 @@
       "actorRole": "red_team",
       "targetResource": "/api/runs",
       "decision": "RECORDED",
-      "details": "Red Team submitted harmless baseline test probe \"run-seed-01\"."
+      "details": "Red Team submitted harmless baseline test probe \"run-seed-01\".",
+      "previousHash": "4a09deee232b42bd998a3dec6eadc32ed53c9264353ad436427b466f27e35aac",
+      "hash": "7cab73a98807ec09889c320620538cf4430ffa6016e6407cf6cc8d2fce948053"
     },
     {
       "id": "audit-03",
@@ -215,7 +303,9 @@
       "actorRole": "admin",
       "targetResource": "/api/gateway/evaluate",
       "decision": "PERMITTED",
-      "details": "Gateway evaluated probe \"run-seed-01\": 0 active rules triggered. Dispatched to mock AI simulator."
+      "details": "Gateway evaluated probe \"run-seed-01\": 0 active rules triggered. Dispatched to mock AI simulator.",
+      "previousHash": "8da3ac09001f42949bc309474cf553883e353b127cc63edd7626bfbe8fc80a85",
+      "hash": "4a09deee232b42bd998a3dec6eadc32ed53c9264353ad436427b466f27e35aac"
     },
     {
       "id": "audit-04",
@@ -226,7 +316,9 @@
       "actorRole": "admin",
       "targetResource": "/api/gateway/evaluate",
       "decision": "BLOCKED",
-      "details": "Interception: probe \"run-seed-02\" triggered rule \"System Prompt Extraction Guard\" & \"Jailbreak Persona Signature\". Request terminated."
+      "details": "Interception: probe \"run-seed-02\" triggered rule \"System Prompt Extraction Guard\" & \"Jailbreak Persona Signature\". Request terminated.",
+      "previousHash": "615f273ec874af981d18a84a83deda0d2162254ae222c926d2111d110e1bf49d",
+      "hash": "8da3ac09001f42949bc309474cf553883e353b127cc63edd7626bfbe8fc80a85"
     },
     {
       "id": "audit-05",
@@ -237,7 +329,9 @@
       "actorRole": "red_team",
       "targetResource": "/api/rules",
       "decision": "DENIED",
-      "details": "Unauthorized rule inspection attempt rejected. Red Team is strictly barred from querying Blue Team defensive rules."
+      "details": "Unauthorized rule inspection attempt rejected. Red Team is strictly barred from querying Blue Team defensive rules.",
+      "previousHash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "hash": "615f273ec874af981d18a84a83deda0d2162254ae222c926d2111d110e1bf49d"
     }
   ]
 }

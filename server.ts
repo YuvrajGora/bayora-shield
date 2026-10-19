@@ -8,6 +8,7 @@ import {
   DefensiveRule,
   TestRun,
   AuditLogEntry,
+  AuditIntegrityReport,
   User,
   Role,
   AutomatedTestResult,
@@ -356,22 +357,163 @@ function saveDatabase() {
   }
 }
 
-loadDatabase();
+// SEC-03: Cryptographic Audit Hash-Chain (Tamper-Evident Ledger)
+const GENESIS_HASH = '0000000000000000000000000000000000000000000000000000000000000000';
 
-// Audit helper
-function recordAuditLog(entry: Omit<AuditLogEntry, 'id' | 'timestamp'>): AuditLogEntry {
-  const fullEntry: AuditLogEntry = {
-    id: `audit-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-    timestamp: new Date().toISOString(),
-    ...entry,
-  };
-  db.auditLogs.unshift(fullEntry);
-  if (db.auditLogs.length > 500) {
-    db.auditLogs = db.auditLogs.slice(0, 500);
+function computeAuditEntryHash(entry: {
+  id: string;
+  timestamp: string;
+  eventType: string;
+  severity: string;
+  actorEmail: string;
+  actorRole: string;
+  targetResource: string;
+  decision: string;
+  details: string;
+  ipAddress?: string;
+  previousHash: string;
+}): string {
+  // Canonical serialization: deterministic order of keys
+  const canonical = JSON.stringify({
+    id: entry.id,
+    timestamp: entry.timestamp,
+    eventType: entry.eventType,
+    severity: entry.severity,
+    actorEmail: entry.actorEmail,
+    actorRole: entry.actorRole,
+    targetResource: entry.targetResource,
+    decision: entry.decision,
+    details: entry.details,
+    ipAddress: entry.ipAddress || '',
+    previousHash: entry.previousHash,
+  });
+  return crypto.createHash('sha256').update(canonical).digest('hex');
+}
+
+function ensureAuditHashChainIntegrity() {
+  if (!db.auditLogs || db.auditLogs.length === 0) return;
+  const needsHashing = db.auditLogs.some((l) => !l.hash || !l.previousHash);
+  if (needsHashing) {
+    let prev = GENESIS_HASH;
+    for (let i = db.auditLogs.length - 1; i >= 0; i--) {
+      const current = db.auditLogs[i];
+      current.previousHash = prev;
+      current.hash = computeAuditEntryHash({
+        id: current.id,
+        timestamp: current.timestamp,
+        eventType: current.eventType,
+        severity: current.severity,
+        actorEmail: current.actorEmail,
+        actorRole: current.actorRole,
+        targetResource: current.targetResource,
+        decision: current.decision,
+        details: current.details,
+        ipAddress: current.ipAddress,
+        previousHash: prev,
+      });
+      prev = current.hash;
+    }
+    saveDatabase();
   }
+}
+
+// Audit helper with SHA-256 hash-chaining and no silent truncation
+function recordAuditLog(entry: Omit<AuditLogEntry, 'id' | 'timestamp' | 'previousHash' | 'hash'>): AuditLogEntry {
+  const id = `audit-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+  const timestamp = new Date().toISOString();
+  const previousHash = db.auditLogs.length > 0 ? (db.auditLogs[0].hash || GENESIS_HASH) : GENESIS_HASH;
+
+  const entryData = {
+    id,
+    timestamp,
+    ...entry,
+    previousHash,
+  };
+
+  const hash = computeAuditEntryHash(entryData);
+  const fullEntry: AuditLogEntry = {
+    ...entryData,
+    hash,
+  };
+
+  db.auditLogs.unshift(fullEntry);
+  // SEC-03: Never truncate audit logs silently.
   saveDatabase();
   return fullEntry;
 }
+
+function verifyAuditLogIntegrity(): AuditIntegrityReport {
+  const logs = db.auditLogs;
+  if (!logs || logs.length === 0) {
+    return {
+      valid: true,
+      totalEntries: 0,
+      verifiedEntries: 0,
+      verifiedAt: new Date().toISOString(),
+    };
+  }
+
+  // Iterate chronologically: from oldest (index length - 1) down to newest (index 0)
+  let expectedPrev = logs[logs.length - 1].previousHash || GENESIS_HASH;
+
+  for (let i = logs.length - 1; i >= 0; i--) {
+    const current = logs[i];
+
+    if (current.previousHash !== expectedPrev) {
+      return {
+        valid: false,
+        totalEntries: logs.length,
+        verifiedEntries: logs.length - 1 - i,
+        brokenAtIndex: i,
+        brokenEntryId: current.id,
+        expectedHash: expectedPrev,
+        actualHash: current.previousHash,
+        reason: `Hash-chain sequence broken at entry "${current.id}" (index ${i}). Linkage mismatch.`,
+        verifiedAt: new Date().toISOString(),
+      };
+    }
+
+    const recomputed = computeAuditEntryHash({
+      id: current.id,
+      timestamp: current.timestamp,
+      eventType: current.eventType,
+      severity: current.severity,
+      actorEmail: current.actorEmail,
+      actorRole: current.actorRole,
+      targetResource: current.targetResource,
+      decision: current.decision,
+      details: current.details,
+      ipAddress: current.ipAddress,
+      previousHash: current.previousHash,
+    });
+
+    if (current.hash !== recomputed) {
+      return {
+        valid: false,
+        totalEntries: logs.length,
+        verifiedEntries: logs.length - 1 - i,
+        brokenAtIndex: i,
+        brokenEntryId: current.id,
+        expectedHash: recomputed,
+        actualHash: current.hash,
+        reason: `Cryptographic tamper detected on entry "${current.id}". Entry contents were altered after hashing.`,
+        verifiedAt: new Date().toISOString(),
+      };
+    }
+
+    expectedPrev = current.hash;
+  }
+
+  return {
+    valid: true,
+    totalEntries: logs.length,
+    verifiedEntries: logs.length,
+    verifiedAt: new Date().toISOString(),
+  };
+}
+
+loadDatabase();
+ensureAuditHashChainIntegrity();
 
 // Authentication Middleware
 interface AuthenticatedRequest extends Request {
@@ -1168,6 +1310,12 @@ app.get('/api/audit', requireAuth, (req: AuthenticatedRequest, res) => {
   res.json({ logs: sanitizedLogs.slice(0, max), total: sanitizedLogs.length });
 });
 
+// SEC-03: Verify cryptographic SHA-256 hash-chain integrity
+app.get('/api/audit/verify', requireAuth, requireRoles('admin', 'blue_team'), (req: AuthenticatedRequest, res) => {
+  const report = verifyAuditLogIntegrity();
+  res.json(report);
+});
+
 // 7. Automated Test Suite Runner (Verifies security requirements on live backend!)
 app.post('/api/tests/run', requireAuth, requireRoles('admin'), async (req: AuthenticatedRequest, res) => {
   const startTime = Date.now();
@@ -1434,24 +1582,29 @@ app.post('/api/tests/run', requireAuth, requireRoles('admin'), async (req: Authe
 
 // 8. Demo Reset Endpoint
 app.post('/api/system/reset', requireAuth, requireRoles('admin'), (req: AuthenticatedRequest, res) => {
+  // SEC-03: Preserve audit trail during reset. Never silently erase historical security events.
+  const preservedAuditLogs = db.auditLogs || [];
   db = {
     rules: [...DEFAULT_RULES],
     runs: [...DEFAULT_RUNS],
-    auditLogs: [...DEFAULT_AUDIT],
+    auditLogs: preservedAuditLogs,
   };
   saveDatabase();
 
   recordAuditLog({
-    eventType: 'SESSION_LOGIN',
-    severity: 'INFO',
+    eventType: 'SECURITY_TEST_SUITE_RUN',
+    severity: 'WARNING',
     actorEmail: req.user?.email || 'admin@bayora.shield',
-    actorRole: 'admin',
+    actorRole: req.user?.role || 'admin',
     targetResource: '/api/system/reset',
     decision: 'RECORDED',
-    details: 'System database reset to initial demonstration state.',
+    details: 'System rules and runs were reset to demonstration defaults. Historical audit log chain was preserved intact.',
   });
 
-  res.json({ message: 'Bayora Shield database reset to factory demo state.', dbCounts: { rules: db.rules.length, runs: db.runs.length, audit: db.auditLogs.length } });
+  res.json({
+    message: 'Bayora Shield rules and test runs reset to factory demo state. Audit trail was preserved intact.',
+    dbCounts: { rules: db.rules.length, runs: db.runs.length, audit: db.auditLogs.length },
+  });
 });
 
 // ----------------------------------------------------

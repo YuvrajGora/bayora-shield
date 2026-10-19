@@ -3,6 +3,7 @@ import {
   DefensiveRule,
   TestRun,
   AuditLogEntry,
+  AuditIntegrityReport,
   AutomatedTestResult,
   StorageInfo,
   Role,
@@ -174,6 +175,10 @@ export const api = {
     const queryString = query.toString();
     const url = `/api/audit${queryString ? `?${queryString}` : ''}`;
     return request<{ logs: AuditLogEntry[]; total: number }>(url);
+  },
+
+  async verifyAuditIntegrity(): Promise<AuditIntegrityReport> {
+    return request<AuditIntegrityReport>('/api/audit/verify');
   },
 
   // Automated Test Suite

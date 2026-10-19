@@ -90,7 +90,21 @@ export interface AuditLogEntry {
   decision: 'PERMITTED' | 'BLOCKED' | 'DENIED' | 'RECORDED';
   details: string;
   ipAddress?: string;
+  previousHash?: string;
+  hash?: string;
   metadata?: Record<string, any>;
+}
+
+export interface AuditIntegrityReport {
+  valid: boolean;
+  totalEntries: number;
+  verifiedEntries: number;
+  brokenAtIndex?: number;
+  brokenEntryId?: string;
+  expectedHash?: string;
+  actualHash?: string;
+  reason?: string;
+  verifiedAt: string;
 }
 
 export interface AutomatedTestResult {
