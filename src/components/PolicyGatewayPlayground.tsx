@@ -247,6 +247,19 @@ export const PolicyGatewayPlayground: React.FC = () => {
                     </div>
                   )}
 
+                  {/* Red Team Rule Content Masking Notice */}
+                  {result.decision === 'BLOCKED' && result.triggeredRules.length === 0 && (
+                    <div className="p-3 rounded bg-slate-900/80 border border-slate-800 text-xs text-slate-400 space-y-1">
+                      <div className="font-semibold text-slate-300 flex items-center gap-1.5">
+                        <Shield className="w-3.5 h-3.5 text-cyan-400" />
+                        Defensive Rule Content Isolation
+                      </div>
+                      <p className="text-[11px] text-slate-400">
+                        Rule names, categories, and regex patterns are concealed on the server from Red Team callers to prevent adversarial defense enumeration.
+                      </p>
+                    </div>
+                  )}
+
                   {/* Mock AI Simulator Response (if Allowed) */}
                   {result.mockAiResponse && (
                     <div className="space-y-2">

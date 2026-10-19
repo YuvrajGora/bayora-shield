@@ -831,7 +831,20 @@ app.delete('/api/rules/:id', requireAuth, requireRoles('blue_team', 'admin'), (r
 // 4. Test Runs & Sealed Payload Isolation
 // Requirement: Blue Team CANNOT view active test payloads while test is running!
 function sanitizeRunForUser(run: TestRun, userRole: User['role']): TestRun {
-  // If requester is Blue Team and test is actively running, seal the prompt payload!
+  // CRITICAL SEC-02: Red Team MUST NOT receive Blue Team defensive rule details or sensitive match notes!
+  if (userRole === 'red_team') {
+    return {
+      ...run,
+      triggeredRules: [], // Redacted: zero rule leakage to Red Team
+      notes: run.decision === 'BLOCKED'
+        ? 'Evaluation terminated by Policy Gateway. Probe intercepted under security policy.'
+        : run.decision === 'FLAGGED_AND_PASSED'
+        ? 'Heuristic flag noted. Processed under safe sandbox protocol.'
+        : run.notes || 'Evaluated cleanly by Policy Gateway.',
+    };
+  }
+
+  // Blue Team cannot view active quarantined payloads while test is running
   if (userRole === 'blue_team' && run.status === 'running') {
     return {
       ...run,
@@ -840,6 +853,7 @@ function sanitizeRunForUser(run: TestRun, userRole: User['role']): TestRun {
       notes: 'Active payload sealed to preserve adversarial integrity and avoid preemptive rule biasing.',
     };
   }
+
   return run;
 }
 
@@ -1042,6 +1056,31 @@ function finalizeRun(run: TestRun, evalResult: ReturnType<typeof evaluatePromptA
   }
 }
 
+// Helper to sanitize audit logs for Red Team
+function sanitizeAuditEntryForUser(log: AuditLogEntry, userRole: User['role']): AuditLogEntry {
+  if (userRole === 'red_team') {
+    const cleanMetadata = log.metadata ? { ...log.metadata } : undefined;
+    if (cleanMetadata) {
+      delete cleanMetadata.blockRules;
+      delete cleanMetadata.triggeredRules;
+      delete cleanMetadata.ruleId;
+      delete cleanMetadata.ruleName;
+    }
+
+    let cleanDetails = log.details;
+    if (cleanDetails.includes('Triggered:') || cleanDetails.includes('Triggered rules:')) {
+      cleanDetails = cleanDetails.replace(/Triggered( rules)?:.*/i, 'Triggered: [Rule details restricted to Blue Team / Admin]');
+    }
+
+    return {
+      ...log,
+      details: cleanDetails,
+      metadata: cleanMetadata && Object.keys(cleanMetadata).length > 0 ? cleanMetadata : undefined,
+    };
+  }
+  return log;
+}
+
 // 5. Direct Gateway Evaluation Endpoint
 app.post('/api/gateway/evaluate', requireAuth, (req: AuthenticatedRequest, res) => {
   const { prompt } = req.body;
@@ -1058,6 +1097,12 @@ app.post('/api/gateway/evaluate', requireAuth, (req: AuthenticatedRequest, res) 
     mockAiOutput = simulateMockAiResponse(prompt);
   }
 
+  const auditDetails = evalResult.decision === 'BLOCKED'
+    ? (user.role === 'red_team'
+        ? 'Direct evaluation BLOCKED. Hostile vector intercepted by gateway policy.'
+        : `Direct evaluation BLOCKED. Triggered: ${evalResult.blockRules.map((r) => r.name).join('; ')}`)
+    : 'Direct evaluation ALLOWED. Dispatched to mock simulator.';
+
   const auditEntry = recordAuditLog({
     eventType: evalResult.decision === 'BLOCKED' ? 'GATEWAY_BLOCKED' : 'GATEWAY_ALLOWED',
     severity: evalResult.decision === 'BLOCKED' ? 'CRITICAL' : 'INFO',
@@ -1065,20 +1110,23 @@ app.post('/api/gateway/evaluate', requireAuth, (req: AuthenticatedRequest, res) 
     actorRole: user.role,
     targetResource: '/api/gateway/evaluate',
     decision: evalResult.decision === 'BLOCKED' ? 'BLOCKED' : 'PERMITTED',
-    details: evalResult.decision === 'BLOCKED'
-      ? `Direct evaluation BLOCKED. Triggered: ${evalResult.blockRules.map((r) => r.name).join('; ')}`
-      : `Direct evaluation ALLOWED. Dispatched to mock simulator.`,
+    details: auditDetails,
   });
+
+  // CRITICAL SEC-02: Red Team must NOT receive Blue Team rule IDs, names, or categories
+  const exposedRules = user.role === 'red_team'
+    ? []
+    : evalResult.triggeredRules.map((r) => ({
+        id: r.id,
+        name: r.name,
+        category: r.category,
+        severity: r.severity,
+        action: r.action,
+      }));
 
   res.json({
     decision: evalResult.decision,
-    triggeredRules: evalResult.triggeredRules.map((r) => ({
-      id: r.id,
-      name: r.name,
-      category: r.category,
-      severity: r.severity,
-      action: r.action,
-    })),
+    triggeredRules: exposedRules,
     mockAiResponse: mockAiOutput,
     auditLogId: auditEntry.id,
     evaluatedAt: new Date().toISOString(),
@@ -1092,9 +1140,9 @@ app.get('/api/audit', requireAuth, (req: AuthenticatedRequest, res) => {
 
   let logs = [...db.auditLogs];
 
-  // Red Team only sees their own test submissions and gateway decisions for their own tests, unless Admin
+  // Red Team only sees their own events (do not leak other users' submissions)
   if (user.role === 'red_team') {
-    logs = logs.filter((l) => l.actorEmail === user.email || l.eventType === 'TEST_SUBMISSION');
+    logs = logs.filter((l) => l.actorEmail === user.email);
   }
 
   if (eventType && typeof eventType === 'string' && eventType !== 'ALL') {
@@ -1116,7 +1164,8 @@ app.get('/api/audit', requireAuth, (req: AuthenticatedRequest, res) => {
   }
 
   const max = limit ? parseInt(limit as string, 10) : 100;
-  res.json({ logs: logs.slice(0, max), total: logs.length });
+  const sanitizedLogs = logs.map((l) => sanitizeAuditEntryForUser(l, user.role));
+  res.json({ logs: sanitizedLogs.slice(0, max), total: sanitizedLogs.length });
 });
 
 // 7. Automated Test Suite Runner (Verifies security requirements on live backend!)

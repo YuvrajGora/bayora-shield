@@ -440,6 +440,19 @@ export const RedTeamSandbox: React.FC = () => {
               </div>
             )}
 
+            {/* Defensive Rule Content Isolation Notice for Red Team */}
+            {selectedRun.decision === 'BLOCKED' && selectedRun.triggeredRules.length === 0 && (
+              <div className="p-3 rounded bg-slate-900/80 border border-slate-800 text-xs text-slate-400 space-y-1">
+                <div className="font-semibold text-slate-300 flex items-center gap-1.5">
+                  <Lock className="w-3.5 h-3.5 text-cyan-400" />
+                  Defensive Rule Content Isolation
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  Defensive rule names, categories, and patterns are isolated on the server to prevent adversarial oracle enumeration.
+                </p>
+              </div>
+            )}
+
             {/* Mock AI Simulator Output */}
             {selectedRun.mockAiResponse && (
               <div>
