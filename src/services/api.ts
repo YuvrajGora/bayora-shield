@@ -71,14 +71,28 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
 
 export const api = {
   // Auth
-  async login(role: Role): Promise<{ user: User; token: string }> {
-    const res = await request<{ user: User; token: string }>('/api/auth/login', {
+  async login(credentials: { role?: Role; email?: string; password: string }): Promise<{ user: User; token: string; expiresAt: string }> {
+    const res = await request<{ user: User; token: string; expiresAt: string }>('/api/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ role }),
+      body: JSON.stringify(credentials),
     });
     authStorage.setToken(res.token);
     authStorage.setUser(res.user);
     return res;
+  },
+
+  async logout(): Promise<void> {
+    try {
+      await request('/api/auth/logout', { method: 'POST' });
+    } catch {
+      // Ignore network errors on logout
+    } finally {
+      authStorage.clear();
+    }
+  },
+
+  async getDemoAccounts(): Promise<{ accounts: Array<{ role: Role; name: string; email: string; avatarSeed: string }> }> {
+    return request('/api/auth/demo-accounts');
   },
 
   async getCurrentUser(): Promise<{ user: User }> {

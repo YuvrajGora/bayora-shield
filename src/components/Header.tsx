@@ -9,14 +9,11 @@ interface HeaderProps {
   currentTab: NavTab;
   onSelectTab: (tab: NavTab) => void;
   onOpenResetModal: () => void;
+  onOpenLoginModal: () => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ currentTab, onSelectTab, onOpenResetModal }) => {
-  const { user, switchRole, logout } = useAuth();
-
-  const handleRoleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    switchRole(e.target.value as Role);
-  };
+export const Header: React.FC<HeaderProps> = ({ currentTab, onSelectTab, onOpenResetModal, onOpenLoginModal }) => {
+  const { user, logout } = useAuth();
 
   const getRoleDisplayName = (role: Role) => {
     switch (role) {
@@ -119,23 +116,23 @@ export const Header: React.FC<HeaderProps> = ({ currentTab, onSelectTab, onOpenR
           {user ? (
             <div className="flex items-center gap-2">
               <div className="flex items-center gap-2 bg-slate-900/90 border border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-300">
-                <span className="text-slate-400 text-xs hidden sm:inline">Role:</span>
-                <select
-                  value={user.role}
-                  onChange={handleRoleChange}
-                  className="bg-transparent text-cyan-300 font-medium focus:outline-none cursor-pointer text-xs"
-                >
-                  <option value="admin" className="bg-slate-900 text-slate-200">
-                    Admin
-                  </option>
-                  <option value="red_team" className="bg-slate-900 text-red-300">
-                    Red Team
-                  </option>
-                  <option value="blue_team" className="bg-slate-900 text-blue-300">
-                    Blue Team
-                  </option>
-                </select>
+                <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                <span className="font-semibold text-white">{user.name}</span>
+                <span className="text-slate-500">·</span>
+                <span className={`font-mono font-medium ${
+                  user.role === 'admin' ? 'text-cyan-400' : user.role === 'red_team' ? 'text-rose-400' : 'text-blue-400'
+                }`}>
+                  {user.role === 'admin' ? 'Admin' : user.role === 'red_team' ? 'Red Team' : 'Blue Team'}
+                </span>
               </div>
+
+              <button
+                onClick={onOpenLoginModal}
+                title="Switch Persona"
+                className="px-2.5 py-1.5 text-xs text-slate-300 hover:text-cyan-300 bg-slate-900/80 hover:bg-slate-800 border border-slate-800 rounded transition-colors whitespace-nowrap cursor-pointer"
+              >
+                Switch Persona
+              </button>
 
               {user.role === 'admin' && (
                 <button
@@ -150,15 +147,15 @@ export const Header: React.FC<HeaderProps> = ({ currentTab, onSelectTab, onOpenR
               <button
                 onClick={logout}
                 title="Sign Out"
-                className="p-1.5 text-slate-400 hover:text-rose-400 bg-slate-900/80 hover:bg-slate-800 border border-slate-800 rounded transition-colors"
+                className="p-1.5 text-slate-400 hover:text-rose-400 bg-slate-900/80 hover:bg-slate-800 border border-slate-800 rounded transition-colors cursor-pointer"
               >
                 <LogOut className="w-4 h-4" />
               </button>
             </div>
           ) : (
             <button
-              onClick={() => onSelectTab('red_team')}
-              className="px-3.5 py-1.5 text-xs font-semibold text-white bg-cyan-600 hover:bg-cyan-500 rounded transition-colors whitespace-nowrap"
+              onClick={onOpenLoginModal}
+              className="px-3.5 py-1.5 text-xs font-semibold text-white bg-cyan-600 hover:bg-cyan-500 rounded transition-colors whitespace-nowrap cursor-pointer"
             >
               Sign In
             </button>

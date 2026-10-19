@@ -5,9 +5,8 @@ import { api, authStorage } from '../services/api.ts';
 interface AuthContextType {
   user: User | null;
   loading: boolean;
-  login: (role: Role) => Promise<void>;
-  logout: () => void;
-  switchRole: (role: Role) => Promise<void>;
+  login: (credentials: { role?: Role; email?: string; password: string }) => Promise<void>;
+  logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -30,13 +29,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setUser(null);
         }
       } else {
-        // Auto login as admin for initial quick preview if not logged in
-        try {
-          const res = await api.login('admin');
-          setUser(res.user);
-        } catch (err) {
-          console.error('Initial login fallback error:', err);
-        }
+        // Strict Security: DO NOT automatically log in as admin.
+        // User must explicitly authenticate with credentials.
+        authStorage.clear();
+        setUser(null);
       }
       setLoading(false);
     }
@@ -44,27 +40,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     initAuth();
   }, []);
 
-  const login = async (role: Role) => {
+  const login = async (credentials: { role?: Role; email?: string; password: string }) => {
     setLoading(true);
     try {
-      const res = await api.login(role);
+      const res = await api.login(credentials);
       setUser(res.user);
     } finally {
       setLoading(false);
     }
   };
 
-  const logout = () => {
-    authStorage.clear();
-    setUser(null);
-  };
-
-  const switchRole = async (role: Role) => {
-    await login(role);
+  const logout = async () => {
+    setLoading(true);
+    try {
+      await api.logout();
+    } finally {
+      setUser(null);
+      setLoading(false);
+    }
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout, switchRole }}>
+    <AuthContext.Provider value={{ user, loading, login, logout }}>
       {children}
     </AuthContext.Provider>
   );

@@ -9,6 +9,7 @@ import {
   TestRun,
   AuditLogEntry,
   User,
+  Role,
   AutomatedTestResult,
   StorageInfo,
 } from './src/types/index.ts';
@@ -31,33 +32,84 @@ if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
-// Demo Users
-const USERS: Record<string, User> = {
+// User Account & Session Models
+interface UserAccount {
+  id: string;
+  name: string;
+  email: string;
+  role: Role;
+  avatarSeed: string;
+  salt: string;
+  passwordHash: string;
+}
+
+interface ActiveSession {
+  token: string;
+  userId: string;
+  email: string;
+  name: string;
+  role: Role;
+  avatarSeed: string;
+  createdAt: number;
+  expiresAt: number;
+}
+
+// Password hashing using Node.js crypto (PBKDF2 with SHA-512, 100k iterations)
+function hashPassword(password: string, salt: string): string {
+  return crypto.pbkdf2Sync(password, salt, 100_000, 64, 'sha512').toString('hex');
+}
+
+function verifyPassword(password: string, salt: string, expectedHash: string): boolean {
+  try {
+    const computed = hashPassword(password, salt);
+    return crypto.timingSafeEqual(Buffer.from(computed, 'hex'), Buffer.from(expectedHash, 'hex'));
+  } catch {
+    return false;
+  }
+}
+
+// Configurable local demo credentials
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'bayora-admin-2026!';
+const RED_TEAM_PASSWORD = process.env.RED_TEAM_PASSWORD || 'bayora-red-2026!';
+const BLUE_TEAM_PASSWORD = process.env.BLUE_TEAM_PASSWORD || 'bayora-blue-2026!';
+
+const adminSalt = crypto.randomBytes(16).toString('hex');
+const redSalt = crypto.randomBytes(16).toString('hex');
+const blueSalt = crypto.randomBytes(16).toString('hex');
+
+const ACCOUNTS: Record<Role, UserAccount> = {
   admin: {
     id: 'usr-admin-01',
     name: 'Alex Vance',
     email: 'admin@bayora.shield',
     role: 'admin',
-    token: 'demo-token-admin-01',
     avatarSeed: 'admin',
+    salt: adminSalt,
+    passwordHash: hashPassword(ADMIN_PASSWORD, adminSalt),
   },
   red_team: {
     id: 'usr-red-02',
     name: 'Raven Vance (Red Lead)',
     email: 'redteam@bayora.shield',
     role: 'red_team',
-    token: 'demo-token-redteam-02',
     avatarSeed: 'redteam',
+    salt: redSalt,
+    passwordHash: hashPassword(RED_TEAM_PASSWORD, redSalt),
   },
   blue_team: {
     id: 'usr-blue-03',
     name: 'Cypher Stone (Blue Lead)',
     email: 'blueteam@bayora.shield',
     role: 'blue_team',
-    token: 'demo-token-blueteam-03',
     avatarSeed: 'blueteam',
+    salt: blueSalt,
+    passwordHash: hashPassword(BLUE_TEAM_PASSWORD, blueSalt),
   },
 };
+
+// Map of active session tokens (256-bit cryptographic entropy)
+const SESSION_TTL_MS = parseInt(process.env.SESSION_DURATION_HOURS || '8', 10) * 3600 * 1000;
+const activeSessions = new Map<string, ActiveSession>();
 
 // Initial Seed Data
 const DEFAULT_RULES: DefensiveRule[] = [
@@ -345,9 +397,9 @@ function requireAuth(req: AuthenticatedRequest, res: Response, next: NextFunctio
   }
 
   const token = authHeader.replace('Bearer ', '').trim();
-  const matchedUser = Object.values(USERS).find((u) => u.token === token);
+  const session = activeSessions.get(token);
 
-  if (!matchedUser) {
+  if (!session) {
     recordAuditLog({
       eventType: 'ACCESS_DENIAL',
       severity: 'CRITICAL',
@@ -355,7 +407,7 @@ function requireAuth(req: AuthenticatedRequest, res: Response, next: NextFunctio
       actorRole: 'anonymous',
       targetResource: req.originalUrl,
       decision: 'DENIED',
-      details: `Invalid bearer token rejected on ${req.method} ${req.originalUrl}.`,
+      details: `Invalid or unauthenticated bearer token rejected on ${req.method} ${req.originalUrl}.`,
     });
     return res.status(401).json({
       error: 'Invalid authentication token.',
@@ -363,7 +415,30 @@ function requireAuth(req: AuthenticatedRequest, res: Response, next: NextFunctio
     });
   }
 
-  req.user = matchedUser;
+  if (Date.now() > session.expiresAt) {
+    activeSessions.delete(token);
+    recordAuditLog({
+      eventType: 'ACCESS_DENIAL',
+      severity: 'WARNING',
+      actorEmail: session.email,
+      actorRole: session.role,
+      targetResource: req.originalUrl,
+      decision: 'DENIED',
+      details: `Expired session token rejected on ${req.method} ${req.originalUrl}.`,
+    });
+    return res.status(401).json({
+      error: 'Session expired. Please log in again.',
+      code: 'SESSION_EXPIRED',
+    });
+  }
+
+  req.user = {
+    id: session.userId,
+    name: session.name,
+    email: session.email,
+    role: session.role,
+    avatarSeed: session.avatarSeed,
+  };
   next();
 }
 
@@ -521,48 +596,103 @@ app.get('/api/storage/info', requireAuth, (req, res) => {
 
 // 2. Auth Endpoints
 app.post('/api/auth/login', (req, res) => {
-  const { role, token } = req.body;
+  const { role, email, password } = req.body;
 
-  let user: User | undefined;
-  if (token) {
-    user = Object.values(USERS).find((u) => u.token === token);
-  } else if (role && USERS[role as keyof typeof USERS]) {
-    user = USERS[role as keyof typeof USERS];
+  if (!password || typeof password !== 'string') {
+    return res.status(400).json({ error: 'Password is required for authentication.', code: 'MISSING_PASSWORD' });
   }
 
-  if (!user) {
+  let account: UserAccount | undefined;
+  if (role && ACCOUNTS[role as Role]) {
+    account = ACCOUNTS[role as Role];
+  } else if (email && typeof email === 'string') {
+    const cleanEmail = email.toLowerCase().trim();
+    account = Object.values(ACCOUNTS).find((a) => a.email.toLowerCase() === cleanEmail);
+  }
+
+  if (!account || !verifyPassword(password, account.salt, account.passwordHash)) {
     recordAuditLog({
       eventType: 'ACCESS_DENIAL',
       severity: 'WARNING',
-      actorEmail: 'unknown',
-      actorRole: 'anonymous',
+      actorEmail: account?.email || email || 'unknown',
+      actorRole: account?.role || 'anonymous',
       targetResource: '/api/auth/login',
       decision: 'DENIED',
-      details: `Failed authentication attempt with role: "${role}".`,
+      details: `Failed authentication attempt for ${account ? `role "${account.role}" (${account.email})` : `unknown user "${email || role}"`}. Invalid password.`,
     });
-    return res.status(400).json({ error: 'Invalid demo credentials selected.' });
+    return res.status(401).json({ error: 'Invalid credentials. Please verify your role/email and password.', code: 'INVALID_CREDENTIALS' });
   }
+
+  // Create unpredictable, cryptographically random session token (256-bit entropy)
+  const sessionToken = crypto.randomBytes(32).toString('hex');
+  const now = Date.now();
+  const expiresAt = now + SESSION_TTL_MS;
+
+  activeSessions.set(sessionToken, {
+    token: sessionToken,
+    userId: account.id,
+    email: account.email,
+    name: account.name,
+    role: account.role,
+    avatarSeed: account.avatarSeed,
+    createdAt: now,
+    expiresAt,
+  });
 
   recordAuditLog({
     eventType: 'SESSION_LOGIN',
     severity: 'INFO',
-    actorEmail: user.email,
-    actorRole: user.role,
+    actorEmail: account.email,
+    actorRole: account.role,
     targetResource: '/api/auth/login',
     decision: 'PERMITTED',
-    details: `User ${user.name} (${user.email}) signed in with role [${user.role}].`,
+    details: `User ${account.name} (${account.email}) authenticated with role [${account.role}]. Cryptographic session established.`,
   });
 
   res.json({
-    user,
-    token: user.token,
-    availableAccounts: Object.values(USERS).map((u) => ({
-      role: u.role,
-      name: u.name,
-      email: u.email,
-      token: u.token,
-    })),
+    user: {
+      id: account.id,
+      name: account.name,
+      email: account.email,
+      role: account.role,
+      avatarSeed: account.avatarSeed,
+    },
+    token: sessionToken,
+    expiresAt: new Date(expiresAt).toISOString(),
   });
+});
+
+app.post('/api/auth/logout', requireAuth, (req: AuthenticatedRequest, res) => {
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const token = authHeader.replace('Bearer ', '').trim();
+    activeSessions.delete(token);
+  }
+
+  if (req.user) {
+    recordAuditLog({
+      eventType: 'SESSION_LOGIN',
+      severity: 'INFO',
+      actorEmail: req.user.email,
+      actorRole: req.user.role,
+      targetResource: '/api/auth/logout',
+      decision: 'PERMITTED',
+      details: `User ${req.user.name} (${req.user.email}) logged out. Active session terminated.`,
+    });
+  }
+
+  res.json({ message: 'Session successfully revoked.' });
+});
+
+app.get('/api/auth/demo-accounts', (req, res) => {
+  // Returns safe public persona metadata for local hackathon demo UI - NEVER returns tokens, passwords, or hashes!
+  const publicAccounts = Object.values(ACCOUNTS).map((acc) => ({
+    role: acc.role,
+    name: acc.name,
+    email: acc.email,
+    avatarSeed: acc.avatarSeed,
+  }));
+  res.json({ accounts: publicAccounts });
 });
 
 app.get('/api/auth/me', requireAuth, (req: AuthenticatedRequest, res) => {
@@ -990,7 +1120,7 @@ app.get('/api/audit', requireAuth, (req: AuthenticatedRequest, res) => {
 });
 
 // 7. Automated Test Suite Runner (Verifies security requirements on live backend!)
-app.post('/api/tests/run', requireAuth, async (req: AuthenticatedRequest, res) => {
+app.post('/api/tests/run', requireAuth, requireRoles('admin'), async (req: AuthenticatedRequest, res) => {
   const startTime = Date.now();
   const testResults: AutomatedTestResult[] = [];
 
@@ -1047,7 +1177,7 @@ app.post('/api/tests/run', requireAuth, async (req: AuthenticatedRequest, res) =
     'Verifies that requests from Red Team token to /api/rules are rejected with 403 Forbidden on the backend and recorded in audit log.',
     () => {
       // Simulate backend permission check for Red Team on /api/rules
-      const redUser = USERS.red_team;
+      const redUser = ACCOUNTS.red_team;
       const allowedRoles = ['blue_team', 'admin'];
       const isAllowed = allowedRoles.includes(redUser.role);
       const httpStatus = isAllowed ? 200 : 403;

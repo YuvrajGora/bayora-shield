@@ -12,7 +12,7 @@ import { api } from './services/api.ts';
 import { ShieldX, AlertOctagon, Lock, RefreshCw, KeyRound, ShieldAlert, Cpu } from 'lucide-react';
 
 function DashboardContent() {
-  const { user, loading, switchRole } = useAuth();
+  const { user, loading } = useAuth();
   const [currentTab, setCurrentTab] = useState<NavTab>('red_team');
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
@@ -44,6 +44,32 @@ function DashboardContent() {
 
   // Handle Unauthorized tab views gracefully with security boundary notice
   const renderTabContent = () => {
+    if (!user) {
+      return (
+        <div className="max-w-xl mx-auto py-16 px-4 text-center space-y-6">
+          <div className="w-16 h-16 rounded-2xl bg-cyan-950/60 border border-cyan-500/40 flex items-center justify-center text-cyan-400 mx-auto shadow-lg shadow-cyan-950/50">
+            <Lock className="w-8 h-8" />
+          </div>
+          <div className="space-y-2">
+            <h2 className="text-2xl font-bold tracking-tight text-white">
+              Authentication Required
+            </h2>
+            <p className="text-xs text-slate-400 leading-relaxed max-w-md mx-auto">
+              Bayora Shield enforces strict server-side role-based access control. Please authenticate with a verified persona to access the security testing environment.
+            </p>
+          </div>
+          <div className="pt-2">
+            <button
+              onClick={() => setIsLoginModalOpen(true)}
+              className="px-6 py-2.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded text-xs font-semibold transition-colors shadow-lg shadow-cyan-950/40 cursor-pointer"
+            >
+              Sign In with Security Persona
+            </button>
+          </div>
+        </div>
+      );
+    }
+
     // Role boundary: Red Team trying to view Blue Team rules directly
     if (currentTab === 'blue_team' && user?.role === 'red_team') {
       return (
@@ -66,14 +92,14 @@ function DashboardContent() {
 
           <div className="pt-2 flex items-center justify-center gap-3">
             <button
-              onClick={() => switchRole('blue_team')}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded text-xs font-semibold transition-colors"
+              onClick={() => setIsLoginModalOpen(true)}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded text-xs font-semibold transition-colors cursor-pointer"
             >
-              Switch to Blue Team Persona
+              Authenticate as Blue Team Persona
             </button>
             <button
               onClick={() => setCurrentTab('red_team')}
-              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-xs transition-colors"
+              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-xs transition-colors cursor-pointer"
             >
               Back to Red Team Sandbox
             </button>
@@ -106,6 +132,7 @@ function DashboardContent() {
         currentTab={currentTab}
         onSelectTab={setCurrentTab}
         onOpenResetModal={() => setIsResetModalOpen(true)}
+        onOpenLoginModal={() => setIsLoginModalOpen(true)}
       />
 
       {/* Main Container */}

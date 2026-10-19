@@ -9,7 +9,7 @@ export interface User {
   name: string;
   email: string;
   role: Role;
-  token: string;
+  token?: string;
   avatarSeed: string;
 }
 
