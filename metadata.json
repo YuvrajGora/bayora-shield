@@ -1,0 +1,6 @@
+{
+  "name": "Bayora Shield",
+  "description": "Cybersecurity platform for AI red teaming and defensive rule evaluation with role-based access control, payload sealing, and audit logging.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
