@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext.tsx';
 import { api } from '../services/api.ts';
 import { DefensiveRule, TestRun, RuleMatchType, RuleAction, RuleSeverity } from '../types/index.ts';
+import { validateRegexSafety } from '../utils/regexSafety.ts';
 import { ShieldCheck, Plus, ToggleLeft, ToggleRight, Trash2, Edit3, Lock, Eye, AlertOctagon, RefreshCw, EyeOff, ShieldAlert } from 'lucide-react';
 
 export const BlueTeamRules: React.FC = () => {
@@ -102,12 +103,11 @@ export const BlueTeamRules: React.FC = () => {
     e.preventDefault();
     setFormError(null);
 
-    // Client-side regex check
+    // Client-side ReDoS and syntax safety check
     if (matchType === 'regex') {
-      try {
-        new RegExp(pattern);
-      } catch (err: any) {
-        setFormError(`Invalid Regular Expression: ${err.message}`);
+      const safety = validateRegexSafety(pattern);
+      if (!safety.safe) {
+        setFormError(safety.reason || 'Unsafe regular expression pattern.');
         return;
       }
     }

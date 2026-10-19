@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
+import vm from 'vm';
 import dotenv from 'dotenv';
 import {
   DefensiveRule,
@@ -14,6 +15,7 @@ import {
   AutomatedTestResult,
   StorageInfo,
 } from './src/types/index.ts';
+import { validateRegexSafety } from './src/utils/regexSafety.ts';
 
 dotenv.config();
 
@@ -639,6 +641,46 @@ function simulateMockAiResponse(prompt: string) {
   };
 }
 
+// SEC-04: Safe Bounded Regular Expression Evaluation (ReDoS Defense)
+const regexCache = new Map<string, RegExp>();
+
+function getCompiledRegex(pattern: string): RegExp {
+  let cached = regexCache.get(pattern);
+  if (!cached) {
+    cached = new RegExp(pattern, 'i');
+    regexCache.set(pattern, cached);
+  }
+  return cached;
+}
+
+function safeRegexMatch(
+  pattern: string,
+  text: string,
+  timeoutMs = 100
+): { matched: boolean; timedOut: boolean; error?: string } {
+  // Input length bounding: limit prompt evaluation buffer to 10,000 chars to curb polynomial backtracking
+  const boundedText = text.length > 10000 ? text.substring(0, 10000) : text;
+
+  try {
+    const code = `(() => {
+      const re = new RegExp(${JSON.stringify(pattern)}, 'i');
+      return re.test(${JSON.stringify(boundedText)});
+    })()`;
+
+    const matched = vm.runInNewContext(code, {}, { timeout: timeoutMs });
+    return { matched: Boolean(matched), timedOut: false };
+  } catch (err: any) {
+    if (err.message && err.message.includes('timed out')) {
+      return {
+        matched: false,
+        timedOut: true,
+        error: `Regex evaluation timed out after ${timeoutMs}ms (ReDoS defense triggered)`,
+      };
+    }
+    return { matched: false, timedOut: false, error: err.message };
+  }
+}
+
 // Gateway Rule Evaluator
 function evaluatePromptAgainstRules(prompt: string) {
   const activeRules = db.rules.filter((r) => r.enabled);
@@ -654,8 +696,21 @@ function evaluatePromptAgainstRules(prompt: string) {
       } else if (rule.matchType === 'contains_phrase') {
         matched = lowerPrompt.includes(rule.pattern.toLowerCase().trim());
       } else if (rule.matchType === 'regex') {
-        const regex = new RegExp(rule.pattern, 'i');
-        matched = regex.test(prompt);
+        const matchResult = safeRegexMatch(rule.pattern, prompt, 100);
+        if (matchResult.timedOut) {
+          recordAuditLog({
+            eventType: 'ACCESS_DENIAL',
+            severity: 'CRITICAL',
+            actorEmail: 'gateway-policy-engine@internal',
+            actorRole: 'anonymous',
+            targetResource: `/api/rules/${rule.id}`,
+            decision: 'BLOCKED',
+            details: `ReDoS Mitigation Alert: Rule "${rule.name}" (${rule.id}) execution timed out after 100ms. Evaluation aborted to prevent event-loop freeze.`,
+          });
+          matched = false;
+        } else {
+          matched = matchResult.matched;
+        }
       }
     } catch (err) {
       console.error(`Rule evaluation error for rule ${rule.id}:`, err);
@@ -667,7 +722,10 @@ function evaluatePromptAgainstRules(prompt: string) {
     }
   }
 
-  saveDatabase();
+  // Avoid unnecessary synchronous disk I/O when no hit counts changed
+  if (triggeredRules.length > 0) {
+    saveDatabase();
+  }
 
   const blockRules = triggeredRules.filter((r) => r.action === 'BLOCK');
   const flagRules = triggeredRules.filter((r) => r.action === 'FLAG');
@@ -854,12 +912,14 @@ app.post('/api/rules', requireAuth, requireRoles('blue_team', 'admin'), (req: Au
     return res.status(400).json({ error: 'Rule name and pattern are required.' });
   }
 
-  // Validate regex if matchType is regex
+  // SEC-04: Validate regex against ReDoS (catastrophic backtracking and excessive repetition bounds)
   if (matchType === 'regex') {
-    try {
-      new RegExp(pattern);
-    } catch (err: any) {
-      return res.status(400).json({ error: `Invalid regular expression pattern: ${err.message}` });
+    const safety = validateRegexSafety(pattern);
+    if (!safety.safe) {
+      return res.status(400).json({
+        error: safety.reason,
+        code: 'UNSAFE_REGEX_PATTERN',
+      });
     }
   }
 
@@ -908,11 +968,16 @@ app.put('/api/rules/:id', requireAuth, requireRoles('blue_team', 'admin'), (req:
   const { name, description, matchType, pattern, action, severity, enabled, category } = req.body;
 
   if (matchType === 'regex' || (current.matchType === 'regex' && pattern)) {
-    try {
-      new RegExp(pattern || current.pattern);
-    } catch (err: any) {
-      return res.status(400).json({ error: `Invalid regular expression pattern: ${err.message}` });
+    const patternToTest = pattern || current.pattern;
+    const safety = validateRegexSafety(patternToTest);
+    if (!safety.safe) {
+      return res.status(400).json({
+        error: safety.reason,
+        code: 'UNSAFE_REGEX_PATTERN',
+      });
     }
+    // Evict cached regex on pattern update
+    regexCache.delete(current.pattern);
   }
 
   const updated: DefensiveRule = {
@@ -954,6 +1019,7 @@ app.delete('/api/rules/:id', requireAuth, requireRoles('blue_team', 'admin'), (r
   }
 
   const [deleted] = db.rules.splice(index, 1);
+  regexCache.delete(deleted.pattern);
   saveDatabase();
 
   recordAuditLog({

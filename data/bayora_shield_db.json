@@ -148,6 +148,104 @@
   ],
   "auditLogs": [
     {
+      "id": "audit-1792441416361-hrdcs",
+      "timestamp": "2026-10-19T20:23:36.361Z",
+      "eventType": "RULE_DELETED",
+      "severity": "WARNING",
+      "actorEmail": "blueteam@bayora.shield",
+      "actorRole": "blue_team",
+      "targetResource": "/api/rules/rule-mvfpc8ep",
+      "decision": "RECORDED",
+      "details": "Deleted rule \"Confidential Leak Guard\".",
+      "metadata": {
+        "ruleId": "rule-mvfpc8ep"
+      },
+      "previousHash": "af476f45d2b899885646f1a6a55ab341b3d1afe3fb7ce44a23c14842ad842ac9",
+      "hash": "a30cbe967d2429263a0ad3919441e4693ad66079ad0c49e084a3c903518e60b1"
+    },
+    {
+      "id": "audit-1792441416357-6myo0",
+      "timestamp": "2026-10-19T20:23:36.358Z",
+      "eventType": "GATEWAY_ALLOWED",
+      "severity": "INFO",
+      "actorEmail": "blueteam@bayora.shield",
+      "actorRole": "blue_team",
+      "targetResource": "/api/gateway/evaluate",
+      "decision": "PERMITTED",
+      "details": "Direct evaluation ALLOWED. Dispatched to mock simulator.",
+      "previousHash": "d06188e71168e436c86ab9f314e16f11f37a4e5128944854015d1b3a2aa55700",
+      "hash": "af476f45d2b899885646f1a6a55ab341b3d1afe3fb7ce44a23c14842ad842ac9"
+    },
+    {
+      "id": "audit-1792441416350-cux55",
+      "timestamp": "2026-10-19T20:23:36.350Z",
+      "eventType": "GATEWAY_BLOCKED",
+      "severity": "CRITICAL",
+      "actorEmail": "blueteam@bayora.shield",
+      "actorRole": "blue_team",
+      "targetResource": "/api/gateway/evaluate",
+      "decision": "BLOCKED",
+      "details": "Direct evaluation BLOCKED. Triggered: Confidential Leak Guard",
+      "previousHash": "988748462549114751d29a2d1a6be7be6c99714ab188210ed7651311e4472093",
+      "hash": "d06188e71168e436c86ab9f314e16f11f37a4e5128944854015d1b3a2aa55700"
+    },
+    {
+      "id": "audit-1792441416338-xox0f",
+      "timestamp": "2026-10-19T20:23:36.338Z",
+      "eventType": "RULE_CREATED",
+      "severity": "INFO",
+      "actorEmail": "blueteam@bayora.shield",
+      "actorRole": "blue_team",
+      "targetResource": "/api/rules/rule-mvfpc8ep",
+      "decision": "RECORDED",
+      "details": "Created new defensive rule \"Confidential Leak Guard\" (BLOCK, pattern: \"\\b(confidential|secret|internal-only)\\b\").",
+      "metadata": {
+        "ruleId": "rule-mvfpc8ep",
+        "ruleName": "Confidential Leak Guard"
+      },
+      "previousHash": "bc56efa8e7e92f92366986e848bab858a239a954c7c1ca563cdaff18ed550e0c",
+      "hash": "988748462549114751d29a2d1a6be7be6c99714ab188210ed7651311e4472093"
+    },
+    {
+      "id": "audit-1792441416311-saoa5",
+      "timestamp": "2026-10-19T20:23:36.311Z",
+      "eventType": "ACCESS_DENIAL",
+      "severity": "CRITICAL",
+      "actorEmail": "redteam@bayora.shield",
+      "actorRole": "red_team",
+      "targetResource": "/api/rules",
+      "decision": "DENIED",
+      "details": "Access forbidden: Role \"red_team\" attempted unauthorized access to protected resource POST /api/rules. Required roles: [blue_team, admin].",
+      "previousHash": "0aca5f5e6bbce76f870f2cdc2252c9e32a3de4421902c4a4abab63de47d54954",
+      "hash": "bc56efa8e7e92f92366986e848bab858a239a954c7c1ca563cdaff18ed550e0c"
+    },
+    {
+      "id": "audit-1792441416308-94lb7",
+      "timestamp": "2026-10-19T20:23:36.308Z",
+      "eventType": "SESSION_LOGIN",
+      "severity": "INFO",
+      "actorEmail": "redteam@bayora.shield",
+      "actorRole": "red_team",
+      "targetResource": "/api/auth/login",
+      "decision": "PERMITTED",
+      "details": "User Raven Vance (Red Lead) (redteam@bayora.shield) authenticated with role [red_team]. Cryptographic session established.",
+      "previousHash": "99adb4ef80643918bcd5d302f27c16d75c6ae6502d49aae827349008bafe7224",
+      "hash": "0aca5f5e6bbce76f870f2cdc2252c9e32a3de4421902c4a4abab63de47d54954"
+    },
+    {
+      "id": "audit-1792441416259-39vm2",
+      "timestamp": "2026-10-19T20:23:36.259Z",
+      "eventType": "SESSION_LOGIN",
+      "severity": "INFO",
+      "actorEmail": "blueteam@bayora.shield",
+      "actorRole": "blue_team",
+      "targetResource": "/api/auth/login",
+      "decision": "PERMITTED",
+      "details": "User Cypher Stone (Blue Lead) (blueteam@bayora.shield) authenticated with role [blue_team]. Cryptographic session established.",
+      "previousHash": "4b738cc0db2faae21e17415bd5006be39145bcc9e21864bee91bc340cfb54a75",
+      "hash": "99adb4ef80643918bcd5d302f27c16d75c6ae6502d49aae827349008bafe7224"
+    },
+    {
       "id": "audit-1792441081576-3233k",
       "timestamp": "2026-10-19T20:18:01.576Z",
       "eventType": "SECURITY_TEST_SUITE_RUN",
