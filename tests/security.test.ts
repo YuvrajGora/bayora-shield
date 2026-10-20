@@ -203,6 +203,8 @@ async function runTestSuite() {
 
     const pathologicalVectors = [
       { pattern: '(a+)+$', name: 'Nested Plus Quantifier' },
+      { pattern: '((a+))+', name: 'Nested Quantifier with Inner Parentheses' },
+      { pattern: '((a+)(b+))+', name: 'Multi-Quantified Groups under Repetition' },
       { pattern: '(a*)*', name: 'Nested Star Quantifier' },
       { pattern: '(a|b+)+', name: 'Alternation with Nested Repetition' },
       { pattern: 'a{10000}', name: 'Excessive Repetition Limit' },
@@ -224,8 +226,24 @@ async function runTestSuite() {
       });
       const data = await redosRes.json();
       assert(redosRes.status === 400 && data.code === 'UNSAFE_REGEX_PATTERN',
-        `Rejected pathological regex "${vec.pattern}" (${vec.name}) with HTTP 400 UNSAFE_REGEX_PATTERN`);
+        `POST /api/rules rejected pathological regex "${vec.pattern}" (${vec.name}) with HTTP 400 UNSAFE_REGEX_PATTERN`);
     }
+
+    // Verify PUT /api/rules/:id also enforces the same safety analyzer
+    const putRejectRes = await fetch(`${BASE_URL}/api/rules/rule-sys-leak`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${blueToken}`,
+      },
+      body: JSON.stringify({
+        pattern: '((a+))+',
+        matchType: 'regex',
+      }),
+    });
+    const putRejectData = await putRejectRes.json();
+    assert(putRejectRes.status === 400 && putRejectData.code === 'UNSAFE_REGEX_PATTERN',
+      'PUT /api/rules/:id rejects nested quantifier ReDoS vector with HTTP 400 UNSAFE_REGEX_PATTERN');
 
     // -------------------------------------------------------------------------
     // SUITE 5: SEC-05 & SEC-09 — Reliable Atomic Persistence
