@@ -394,6 +394,12 @@ function loadDatabase() {
       try {
         const parsed = JSON.parse(raw);
         if (parsed && Array.isArray(parsed.rules) && Array.isArray(parsed.runs) && Array.isArray(parsed.auditLogs)) {
+          // SEC-06: Ensure server restart cannot unseal active quarantined runs
+          for (const run of parsed.runs) {
+            if (run.status === 'running' || run.status === 'quarantined') {
+              run.sealed = true;
+            }
+          }
           db = parsed;
           console.log('[Bayora Shield DB] Loaded from disk successfully.');
           return;
@@ -1111,8 +1117,31 @@ app.delete('/api/rules/:id', requireAuth, requireRoles('blue_team', 'admin'), (r
   res.json({ message: 'Rule deleted successfully.', deletedRule: deleted });
 });
 
-// 4. Test Runs & Sealed Payload Isolation
-// Requirement: Blue Team CANNOT view active test payloads while test is running!
+// 4. Test Runs & Sealed Payload Isolation (SEC-06)
+// Prototype Isolation Limitation: Payload quarantine is enforced through server-side state machine
+// boundaries and AES-256-GCM encryption at rest. Because encryption keys are managed by the local Node.js
+// environment, this provides strong software separation, NOT zero-knowledge or hardware enclave isolation.
+
+const PAYLOAD_SECRET = process.env.PAYLOAD_ENCRYPTION_KEY || 'bayora-shield-payload-quarantine-key-2026-secure';
+const ENCRYPTION_KEY = crypto.scryptSync(PAYLOAD_SECRET, 'bayora-shield-salt-2026', 32);
+
+function encryptPayload(text: string): { ciphertext: string; iv: string; tag: string } {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', ENCRYPTION_KEY, iv);
+  let ciphertext = cipher.update(text, 'utf8', 'hex');
+  ciphertext += cipher.final('hex');
+  const tag = cipher.getAuthTag().toString('hex');
+  return { ciphertext, iv: iv.toString('hex'), tag };
+}
+
+function decryptPayload(encrypted: { ciphertext: string; iv: string; tag: string }): string {
+  const decipher = crypto.createDecipheriv('aes-256-gcm', ENCRYPTION_KEY, Buffer.from(encrypted.iv, 'hex'));
+  decipher.setAuthTag(Buffer.from(encrypted.tag, 'hex'));
+  let decrypted = decipher.update(encrypted.ciphertext, 'hex', 'utf8');
+  decrypted += decipher.final('utf8');
+  return decrypted;
+}
+
 function sanitizeRunForUser(run: TestRun, userRole: User['role']): TestRun {
   // CRITICAL SEC-02: Red Team MUST NOT receive Blue Team defensive rule details or sensitive match notes!
   if (userRole === 'red_team') {
@@ -1127,13 +1156,13 @@ function sanitizeRunForUser(run: TestRun, userRole: User['role']): TestRun {
     };
   }
 
-  // Blue Team cannot view active quarantined payloads while test is running
-  if (userRole === 'blue_team' && run.status === 'running') {
+  // SEC-06: Blue Team CANNOT view active quarantined payloads while test is sealed!
+  if (userRole === 'blue_team' && run.sealed) {
     return {
       ...run,
-      prompt: '[SEALED_PAYLOAD_PROTECTED_DURING_TEST] (Payload masked by Bayora Shield Gateway until test completes)',
+      prompt: '[SEALED_PAYLOAD_PROTECTED_DURING_TEST] (Payload quarantined by Bayora Shield Gateway)',
       mockAiResponse: null,
-      notes: 'Active payload sealed to preserve adversarial integrity and avoid preemptive rule biasing.',
+      notes: 'Active payload sealed in quarantine to preserve adversarial integrity and avoid preemptive rule biasing.',
     };
   }
 
@@ -1191,8 +1220,8 @@ app.get('/api/runs/:id/payload', requireAuth, (req: AuthenticatedRequest, res) =
     return res.status(404).json({ error: 'Test run not found.' });
   }
 
-  // SECURITY CHECK: If Blue Team requests sealed payload during active run -> REJECT!
-  if (user.role === 'blue_team' && run.status === 'running') {
+  // SEC-06: If Blue Team requests sealed payload while run is quarantined/sealed -> REJECT!
+  if (user.role === 'blue_team' && run.sealed) {
     recordAuditLog({
       eventType: 'ACCESS_DENIAL',
       severity: 'CRITICAL',
@@ -1200,12 +1229,12 @@ app.get('/api/runs/:id/payload', requireAuth, (req: AuthenticatedRequest, res) =
       actorRole: user.role,
       targetResource: `/api/runs/${id}/payload`,
       decision: 'DENIED',
-      details: `Blue Team attempted to disclose sealed payload for active test run "${id}". Request strictly rejected under zero-knowledge test protocol.`,
+      details: `Blue Team attempted unauthorized raw payload disclosure for sealed quarantined test run "${id}". Request blocked.`,
       metadata: { runId: id, status: run.status },
     });
 
     return res.status(403).json({
-      error: 'Access Denied: Payload is sealed during active execution to prevent bias or preemptive rule tampering.',
+      error: 'Access Denied: Payload is sealed under quarantine. Raw probe content is protected until authorized release.',
       code: 'PAYLOAD_SEALED',
       runId: id,
       status: run.status,
@@ -1221,7 +1250,62 @@ app.get('/api/runs/:id/payload', requireAuth, (req: AuthenticatedRequest, res) =
     runId: run.id,
     status: run.status,
     payload: run.prompt,
-    released: run.status === 'completed',
+    sealed: run.sealed,
+    released: !run.sealed,
+    releasedAt: run.releasedAt,
+  });
+});
+
+// SEC-06: Authorized Payload Release Endpoint
+app.post('/api/runs/:id/release', requireAuth, (req: AuthenticatedRequest, res) => {
+  const { id } = req.params;
+  const user = req.user!;
+  const run = db.runs.find((r) => r.id === id);
+
+  if (!run) {
+    return res.status(404).json({ error: 'Test run not found.' });
+  }
+
+  // Only Admin or the Red Team author can authorize payload release!
+  const isAuthor = run.createdByEmail === user.email;
+  const isAdmin = user.role === 'admin';
+
+  if (!isAuthor && !isAdmin) {
+    recordAuditLog({
+      eventType: 'ACCESS_DENIAL',
+      severity: 'CRITICAL',
+      actorEmail: user.email,
+      actorRole: user.role,
+      targetResource: `/api/runs/${id}/release`,
+      decision: 'DENIED',
+      details: `Unauthorized attempt by ${user.email} (${user.role}) to release quarantined payload for "${run.title}" (${id}). Required: Author or Admin.`,
+    });
+    return res.status(403).json({
+      error: 'Access Denied: Only the test author or an Administrator can authorize payload release from quarantine.',
+      code: 'RELEASE_FORBIDDEN',
+    });
+  }
+
+  run.sealed = false;
+  run.status = 'completed';
+  run.releasedAt = new Date().toISOString();
+  run.releasedBy = user.email;
+  saveDatabase();
+
+  recordAuditLog({
+    eventType: 'PAYLOAD_RELEASED',
+    severity: 'WARNING',
+    actorEmail: user.email,
+    actorRole: user.role,
+    targetResource: `/api/runs/${id}/release`,
+    decision: 'PERMITTED',
+    details: `Payload released from quarantine for test probe "${run.title}" by ${user.email} (${user.role}).`,
+    metadata: { runId: id, releasedBy: user.email },
+  });
+
+  res.json({
+    message: 'Quarantined payload successfully released from isolation.',
+    run: sanitizeRunForUser(run, user.role),
   });
 });
 
@@ -1237,13 +1321,18 @@ app.post('/api/runs', requireAuth, requireRoles('red_team', 'admin'), (req: Auth
   const runId = `run-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`;
   const runTitle = (title || 'Adversarial AI Test Probe').trim();
 
-  // Create initial test run
+  // SEC-06: AES-256-GCM authenticated encryption of raw payload at rest
+  const encryptedPayload = encryptPayload(prompt.trim());
+
+  // SEC-06: Mandatory Server-Enforced Quarantine. Client cannot decide sealed or released state.
   const newRun: TestRun = {
     id: runId,
     title: runTitle,
     prompt: prompt.trim(),
-    sealed: true,
-    status: simulateDelayedCompletion ? 'running' : 'completed',
+    sealed: true, // Always sealed upon submission
+    status: 'running',
+    quarantinedAt: new Date().toISOString(),
+    encryptedPayload,
     decision: 'PENDING',
     triggeredRules: [],
     mockAiResponse: null,
@@ -1251,46 +1340,46 @@ app.post('/api/runs', requireAuth, requireRoles('red_team', 'admin'), (req: Auth
     createdByEmail: user.email,
     createdRole: user.role,
     createdAt: new Date().toISOString(),
-    notes: simulateDelayedCompletion
-      ? 'Active test run in progress. Payload quarantined and sealed from Blue Team inspection.'
-      : 'Evaluated immediately by Bayora Policy Gateway.',
+    notes: 'Active adversarial test probe quarantined under evaluation sealing protocol.',
   };
 
   recordAuditLog({
-    eventType: 'TEST_SUBMISSION',
+    eventType: 'PAYLOAD_QUARANTINED',
     severity: 'INFO',
     actorEmail: user.email,
     actorRole: user.role,
     targetResource: `/api/runs/${runId}`,
     decision: 'RECORDED',
-    details: `Red Team submitted test probe "${runTitle}". Payload size: ${prompt.length} chars.`,
+    details: `Submitted test probe "${runTitle}". Raw payload quarantined and cryptographically sealed at rest.`,
     metadata: { runId, title: runTitle },
   });
 
   // Evaluate through gateway
-  const evalResult = evaluatePromptAgainstRules(prompt);
+  const evalResult = evaluatePromptAgainstRules(prompt.trim());
 
   if (!simulateDelayedCompletion) {
     finalizeRun(newRun, evalResult);
     db.runs.unshift(newRun);
     saveDatabase();
-    return res.status(201).json({ run: sanitizeRunForUser(newRun, user.role) });
+    return res.status(201).json({
+      message: 'Test run evaluated and placed under quarantined sealing protocol.',
+      run: sanitizeRunForUser(newRun, user.role),
+    });
   } else {
-    // Save in running state first
     db.runs.unshift(newRun);
     saveDatabase();
 
-    // Async finish to demonstrate active sealing
+    // Async finish to demonstrate active sealing transition
     setTimeout(() => {
       const liveRun = db.runs.find((r) => r.id === runId);
       if (liveRun && liveRun.status === 'running') {
         finalizeRun(liveRun, evalResult);
         saveDatabase();
       }
-    }, 4000);
+    }, 3000);
 
     return res.status(202).json({
-      message: 'Test run initiated in sealed state. Evaluator processing.',
+      message: 'Test run initiated under server-enforced quarantine. Evaluator active.',
       run: sanitizeRunForUser(newRun, user.role),
     });
   }

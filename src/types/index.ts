@@ -33,7 +33,7 @@ export interface DefensiveRule {
   createdBy: string;
 }
 
-export type RunStatus = 'queued' | 'running' | 'completed' | 'failed';
+export type RunStatus = 'queued' | 'running' | 'quarantined' | 'completed' | 'failed';
 export type GatewayDecision = 'BLOCKED' | 'ALLOWED' | 'FLAGGED_AND_PASSED' | 'PENDING';
 
 export interface TestRun {
@@ -62,6 +62,14 @@ export interface TestRun {
   createdRole: Role;
   createdAt: string;
   completedAt?: string;
+  quarantinedAt?: string;
+  releasedAt?: string;
+  releasedBy?: string;
+  encryptedPayload?: {
+    ciphertext: string;
+    iv: string;
+    tag: string;
+  };
   notes?: string;
 }
 
@@ -75,6 +83,8 @@ export type AuditEventType =
   | 'RULE_DELETED'
   | 'SESSION_LOGIN'
   | 'SEALED_PAYLOAD_PROTECTED'
+  | 'PAYLOAD_QUARANTINED'
+  | 'PAYLOAD_RELEASED'
   | 'SECURITY_TEST_SUITE_RUN';
 
 export type AuditSeverity = 'INFO' | 'WARNING' | 'CRITICAL';

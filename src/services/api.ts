@@ -145,6 +145,12 @@ export const api = {
     });
   },
 
+  async releaseRunPayload(id: string): Promise<{ message: string; run: TestRun }> {
+    return request<{ message: string; run: TestRun }>(`/api/runs/${id}/release`, {
+      method: 'POST',
+    });
+  },
+
   // Policy Gateway
   async evaluateGatewayPrompt(prompt: string): Promise<{
     decision: 'BLOCKED' | 'ALLOWED' | 'FLAGGED_AND_PASSED';

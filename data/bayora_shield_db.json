@@ -78,6 +78,36 @@
   ],
   "runs": [
     {
+      "id": "run-mvga30m7-flxf",
+      "title": "Adversarial Injection Probe M6",
+      "prompt": "Secret adversarial jailbreak probe with payload tokens XYZ",
+      "sealed": false,
+      "status": "completed",
+      "quarantinedAt": "2026-10-20T06:04:18.272Z",
+      "encryptedPayload": {
+        "ciphertext": "a5cb4be5db04a24f7392b8ae1ed6427c4ace5f97fe5379410b8acd05ba074df8ecde582bb62031b15d9a3423f49ac9a8c9836c2dd0cf92174dd7",
+        "iv": "02eff3446f194f6b205e6d58",
+        "tag": "f0fba392b920b5d3e98b7df1dfc604d1"
+      },
+      "decision": "ALLOWED",
+      "triggeredRules": [],
+      "mockAiResponse": {
+        "text": "[Mock AI Simulator - Evaluation Passed]: Input processed deterministically under safe sandbox protocol. No hostile policy violations detected in the submitted prompt payload.",
+        "tokens": 26,
+        "latencyMs": 178,
+        "model": "bayora-eval-sim-v1 (Deterministic Mock)",
+        "deterministicHash": "f9cae6188f"
+      },
+      "createdBy": "usr-red-02",
+      "createdByEmail": "redteam@bayora.shield",
+      "createdRole": "red_team",
+      "createdAt": "2026-10-20T06:04:18.272Z",
+      "notes": "Clean pass through gateway policy. Processed by mock AI simulator.",
+      "completedAt": "2026-10-20T06:04:18.278Z",
+      "releasedAt": "2026-10-20T06:04:18.304Z",
+      "releasedBy": "redteam@bayora.shield"
+    },
+    {
       "id": "run-seed-01",
       "title": "Baseline Benign Security Overview Probe",
       "prompt": "Explain the principles of defense-in-depth within multi-tenant cloud architectures.",
@@ -147,6 +177,126 @@
     }
   ],
   "auditLogs": [
+    {
+      "id": "audit-1792476258307-811xw",
+      "timestamp": "2026-10-20T06:04:18.307Z",
+      "eventType": "PAYLOAD_RELEASED",
+      "severity": "WARNING",
+      "actorEmail": "redteam@bayora.shield",
+      "actorRole": "red_team",
+      "targetResource": "/api/runs/run-mvga30m7-flxf/release",
+      "decision": "PERMITTED",
+      "details": "Payload released from quarantine for test probe \"Adversarial Injection Probe M6\" by redteam@bayora.shield (red_team).",
+      "metadata": {
+        "runId": "run-mvga30m7-flxf",
+        "releasedBy": "redteam@bayora.shield"
+      },
+      "previousHash": "b8fd7c8efb9a51cc3017fad925d65a6460fb6ebf6ae54dd40156c8476456b859",
+      "hash": "7af591e3daca91448545172529ea0224edc9f0d767c24d6ca3f29bf98b3941ff"
+    },
+    {
+      "id": "audit-1792476258299-2jhxr",
+      "timestamp": "2026-10-20T06:04:18.299Z",
+      "eventType": "ACCESS_DENIAL",
+      "severity": "CRITICAL",
+      "actorEmail": "blueteam@bayora.shield",
+      "actorRole": "blue_team",
+      "targetResource": "/api/runs/run-mvga30m7-flxf/release",
+      "decision": "DENIED",
+      "details": "Unauthorized attempt by blueteam@bayora.shield (blue_team) to release quarantined payload for \"Adversarial Injection Probe M6\" (run-mvga30m7-flxf). Required: Author or Admin.",
+      "previousHash": "c1d231a8a76f6e82a3716de582e84a4bd73033b67f0f07e37fea08e7e85b8992",
+      "hash": "b8fd7c8efb9a51cc3017fad925d65a6460fb6ebf6ae54dd40156c8476456b859"
+    },
+    {
+      "id": "audit-1792476258289-i19ie",
+      "timestamp": "2026-10-20T06:04:18.289Z",
+      "eventType": "ACCESS_DENIAL",
+      "severity": "CRITICAL",
+      "actorEmail": "blueteam@bayora.shield",
+      "actorRole": "blue_team",
+      "targetResource": "/api/runs/run-mvga30m7-flxf/payload",
+      "decision": "DENIED",
+      "details": "Blue Team attempted unauthorized raw payload disclosure for sealed quarantined test run \"run-mvga30m7-flxf\". Request blocked.",
+      "metadata": {
+        "runId": "run-mvga30m7-flxf",
+        "status": "completed"
+      },
+      "previousHash": "e0ca097f7567d32c79dc9da32516dc54511d07475059bf5956d70faea5b23ecd",
+      "hash": "c1d231a8a76f6e82a3716de582e84a4bd73033b67f0f07e37fea08e7e85b8992"
+    },
+    {
+      "id": "audit-1792476258278-5iz6t",
+      "timestamp": "2026-10-20T06:04:18.278Z",
+      "eventType": "GATEWAY_ALLOWED",
+      "severity": "INFO",
+      "actorEmail": "system-gateway",
+      "actorRole": "admin",
+      "targetResource": "/api/runs/run-mvga30m7-flxf",
+      "decision": "PERMITTED",
+      "details": "Gateway permitted payload for \"Adversarial Injection Probe M6\". Mock AI output generated deterministically.",
+      "metadata": {
+        "runId": "run-mvga30m7-flxf",
+        "decision": "ALLOWED"
+      },
+      "previousHash": "8065e94f5bf5db88618c2a2a77dc06e987fae8d9fe53a7241898a933cb3cb70c",
+      "hash": "e0ca097f7567d32c79dc9da32516dc54511d07475059bf5956d70faea5b23ecd"
+    },
+    {
+      "id": "audit-1792476258272-xz19x",
+      "timestamp": "2026-10-20T06:04:18.272Z",
+      "eventType": "PAYLOAD_QUARANTINED",
+      "severity": "INFO",
+      "actorEmail": "redteam@bayora.shield",
+      "actorRole": "red_team",
+      "targetResource": "/api/runs/run-mvga30m7-flxf",
+      "decision": "RECORDED",
+      "details": "Submitted test probe \"Adversarial Injection Probe M6\". Raw payload quarantined and cryptographically sealed at rest.",
+      "metadata": {
+        "runId": "run-mvga30m7-flxf",
+        "title": "Adversarial Injection Probe M6"
+      },
+      "previousHash": "5f9e4f5401f8b8229e50564205aa8949ca74601b554bd27928d06659e7661182",
+      "hash": "8065e94f5bf5db88618c2a2a77dc06e987fae8d9fe53a7241898a933cb3cb70c"
+    },
+    {
+      "id": "audit-1792476258262-7xi9i",
+      "timestamp": "2026-10-20T06:04:18.262Z",
+      "eventType": "SESSION_LOGIN",
+      "severity": "INFO",
+      "actorEmail": "admin@bayora.shield",
+      "actorRole": "admin",
+      "targetResource": "/api/auth/login",
+      "decision": "PERMITTED",
+      "details": "User Alex Vance (admin@bayora.shield) authenticated with role [admin]. Cryptographic session established.",
+      "previousHash": "ff573acdaee09b4bf2fbaa6f15b89ed1ed38aae64c323b48bb99fcd02e60e501",
+      "hash": "5f9e4f5401f8b8229e50564205aa8949ca74601b554bd27928d06659e7661182"
+    },
+    {
+      "id": "audit-1792476258185-a9spv",
+      "timestamp": "2026-10-20T06:04:18.185Z",
+      "eventType": "SESSION_LOGIN",
+      "severity": "INFO",
+      "actorEmail": "blueteam@bayora.shield",
+      "actorRole": "blue_team",
+      "targetResource": "/api/auth/login",
+      "decision": "PERMITTED",
+      "details": "User Cypher Stone (Blue Lead) (blueteam@bayora.shield) authenticated with role [blue_team]. Cryptographic session established.",
+      "previousHash": "8a0ced9c4f9deb4822ddc10ae9809d6fb138a5d18223134fa7eda717a782fe74",
+      "hash": "ff573acdaee09b4bf2fbaa6f15b89ed1ed38aae64c323b48bb99fcd02e60e501"
+    },
+    {
+      "id": "audit-1792476258131-1dhk4",
+      "timestamp": "2026-10-20T06:04:18.131Z",
+      "eventType": "SESSION_LOGIN",
+      "severity": "INFO",
+      "actorEmail": "redteam@bayora.shield",
+      "actorRole": "red_team",
+      "targetResource": "/api/auth/login",
+      "decision": "PERMITTED",
+      "details": "User Raven Vance (Red Lead) (redteam@bayora.shield) authenticated with role [red_team]. Cryptographic session established.",
+      "previousHash": "55e8c47418165472138c4c8e3a53e69b6481223b618876b9d09d012293cd3fb0",
+      "hash": "8a0ced9c4f9deb4822ddc10ae9809d6fb138a5d18223134fa7eda717a782fe74"
+    },
     {
       "id": "audit-1792476007092-6u85l",
       "timestamp": "2026-10-20T06:00:07.092Z",
