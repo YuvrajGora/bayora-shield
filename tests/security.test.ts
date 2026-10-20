@@ -257,10 +257,37 @@ async function runTestSuite() {
     assert(storageRes.status === 200 && storageInfo.atomicWritesEnabled === true,
       'Storage info confirms atomicWritesEnabled: true');
 
-    // Verify temp files are cleaned up
+    // 5.1: Verify temp files are cleaned up
     const dataFiles = fs.readdirSync(testDataDir);
     const tmpFiles = dataFiles.filter((f) => f.includes('.tmp.'));
     assert(tmpFiles.length === 0, 'No lingering temporary files in database directory');
+
+    // 5.2: Verify cleanup of stale orphaned temporary files on startup/reload (Fix 6)
+    const staleTempFile = path.join(testDataDir, `bayora_shield_db.tmp.${Date.now() - 120_000}.stale1`);
+    const freshTempFile = path.join(testDataDir, `bayora_shield_db.tmp.${Date.now()}.fresh1`);
+    const testBackupFile = path.join(testDataDir, `bayora_shield_db.corrupt.${Date.now()}.bak`);
+
+    fs.writeFileSync(staleTempFile, 'stale temp data', 'utf-8');
+    fs.writeFileSync(freshTempFile, 'fresh temp data', 'utf-8');
+    fs.writeFileSync(testBackupFile, 'backup data', 'utf-8');
+
+    // Trigger admin reload to invoke cleanupStaleTempFiles
+    await fetch(`${BASE_URL}/api/system/reload`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+
+    const staleStillExists = fs.existsSync(staleTempFile);
+    const freshStillExists = fs.existsSync(freshTempFile);
+    const backupStillExists = fs.existsSync(testBackupFile);
+
+    assert(!staleStillExists, 'Server successfully purged stale temporary file (>1m old) (Fix 6)');
+    assert(freshStillExists, 'Server preserved recent in-flight temporary file');
+    assert(backupStillExists, 'Server strictly preserved backup file (.bak)');
+
+    // Clean up test files
+    try { fs.unlinkSync(freshTempFile); } catch {}
+    try { fs.unlinkSync(testBackupFile); } catch {}
 
     // -------------------------------------------------------------------------
     // SUITE 6: SEC-06 — Server-Enforced Payload Quarantine & Lifecycle
@@ -284,6 +311,16 @@ async function runTestSuite() {
     const probeId = runData.run.id;
     assert(runData.run.sealed === true,
       'Server enforces sealed: true on creation regardless of client request');
+
+    // Blue Team inspects sealed run metadata (Fix 3: ensure encryptedPayload is absent)
+    const blueRunRes = await fetch(`${BASE_URL}/api/runs/${probeId}`, {
+      headers: { Authorization: `Bearer ${blueToken}` },
+    });
+    const blueRunData = await blueRunRes.json();
+    assert(blueRunData.run.encryptedPayload === undefined,
+      'Blue Team run response strictly excludes encryptedPayload property (Fix 3)');
+    assert(!('ciphertext' in blueRunData.run) && !('iv' in blueRunData.run) && !('tag' in blueRunData.run),
+      'Blue Team run response strictly excludes raw encryption metadata (ciphertext/iv/tag) (Fix 3)');
 
     // Blue Team blocked from raw payload while sealed
     const bluePeek = await fetch(`${BASE_URL}/api/runs/${probeId}/payload`, {
@@ -339,30 +376,95 @@ async function runTestSuite() {
       'Live results contain genuine assertions with HTTP evidence');
 
     // -------------------------------------------------------------------------
-    // SUITE 8: Deliberately Broken Fixtures (Negative Assertion Verification)
+    // SUITE 8: Negative Controls: Live Tamper & Genesis Linkage Assertions (Fix 2 & Fix 4)
     // -------------------------------------------------------------------------
-    console.log('\n[SUITE 8] Negative Controls: Deliberately Broken Fixtures');
+    console.log('\n[SUITE 8] Negative Controls: Live Tamper & Genesis Linkage Assertions');
 
-    // 8.1: Verify hash-chain integrity verification detects tampered entry
-    const dbRaw = fs.readFileSync(testDbFile, 'utf-8');
-    const parsed = JSON.parse(dbRaw);
-    if (parsed.auditLogs.length > 2) {
-      // Tamper with one log entry's details
-      const originalDetails = parsed.auditLogs[1].details;
-      parsed.auditLogs[1].details = 'MALICIOUS_TAMPERED_ENTRY_TEXT';
-      fs.writeFileSync(testDbFile, JSON.stringify(parsed, null, 2), 'utf-8');
+    const dbOriginalRaw = fs.readFileSync(testDbFile, 'utf-8');
+    const dbParsed = JSON.parse(dbOriginalRaw);
 
-      // Now query verify endpoint
-      const tamperVerifyRes = await fetch(`${BASE_URL}/api/audit/verify`, {
+    try {
+      if (dbParsed.auditLogs.length > 2) {
+        // 8.1: Test Content Tampering Detection via Live HTTP Endpoint (Fix 4)
+        const tamperedContentDb = JSON.parse(dbOriginalRaw);
+        tamperedContentDb.auditLogs[1].details = 'DELIBERATE_TAMPER_CONTENT_FOR_VERIFICATION';
+        fs.writeFileSync(testDbFile, JSON.stringify(tamperedContentDb, null, 2), 'utf-8');
+
+        // Reload server state from disk
+        const reloadRes = await fetch(`${BASE_URL}/api/system/reload`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${adminToken}` },
+        });
+        assert(reloadRes.status === 200, 'Server loaded tampered database from disk');
+
+        // Verify tamper detection
+        const tamperVerifyRes = await fetch(`${BASE_URL}/api/audit/verify`, {
+          headers: { Authorization: `Bearer ${adminToken}` },
+        });
+        const tamperVerifyData = await tamperVerifyRes.json();
+        assert(
+          tamperVerifyData.valid === false &&
+          tamperVerifyData.brokenAtIndex === 1 &&
+          typeof tamperVerifyData.reason === 'string' &&
+          tamperVerifyData.reason.includes('Cryptographic tamper detected'),
+          'Live verification endpoint detected content alteration at index 1 (Fix 4)'
+        );
+
+        // 8.2: Test Genesis Linkage Enforcement (Fix 2)
+        const tamperedGenesisDb = JSON.parse(dbOriginalRaw);
+        const oldestIdx = tamperedGenesisDb.auditLogs.length - 1;
+        tamperedGenesisDb.auditLogs[oldestIdx].previousHash = 'forged-attacker-genesis-hash-1234567890';
+        fs.writeFileSync(testDbFile, JSON.stringify(tamperedGenesisDb, null, 2), 'utf-8');
+
+        await fetch(`${BASE_URL}/api/system/reload`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${adminToken}` },
+        });
+
+        const genesisVerifyRes = await fetch(`${BASE_URL}/api/audit/verify`, {
+          headers: { Authorization: `Bearer ${adminToken}` },
+        });
+        const genesisVerifyData = await genesisVerifyRes.json();
+        assert(
+          genesisVerifyData.valid === false &&
+          genesisVerifyData.brokenAtIndex === oldestIdx &&
+          typeof genesisVerifyData.reason === 'string' &&
+          genesisVerifyData.reason.includes('Genesis linkage broken'),
+          'Live verification endpoint strictly rejected forged genesis hash (Fix 2)'
+        );
+
+        // 8.3: Test Middle Linkage Deletion Detection
+        const deletedEntryDb = JSON.parse(dbOriginalRaw);
+        deletedEntryDb.auditLogs.splice(1, 1); // Delete entry 1
+        fs.writeFileSync(testDbFile, JSON.stringify(deletedEntryDb, null, 2), 'utf-8');
+
+        await fetch(`${BASE_URL}/api/system/reload`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${adminToken}` },
+        });
+
+        const deleteVerifyRes = await fetch(`${BASE_URL}/api/audit/verify`, {
+          headers: { Authorization: `Bearer ${adminToken}` },
+        });
+        const deleteVerifyData = await deleteVerifyRes.json();
+        assert(
+          deleteVerifyData.valid === false &&
+          typeof deleteVerifyData.reason === 'string' &&
+          deleteVerifyData.reason.includes('Linkage mismatch'),
+          'Live verification endpoint detected deleted entry linkage discontinuity'
+        );
+      }
+    } finally {
+      // Safe restoration: restore original database and reload
+      fs.writeFileSync(testDbFile, dbOriginalRaw, 'utf-8');
+      await fetch(`${BASE_URL}/api/system/reload`, {
+        method: 'POST',
         headers: { Authorization: `Bearer ${adminToken}` },
       });
-      // Note: server in-memory database may differ if not reloaded, but let's test algorithm directly
-      const recompute = crypto.createHash('sha256').update(JSON.stringify({ test: 'tamper' })).digest('hex');
-      assert(recompute.length === 64, 'SHA-256 tamper computation confirmed');
-
-      // Restore original DB
-      fs.writeFileSync(testDbFile, dbRaw, 'utf-8');
-      assert(true, 'Isolated negative tamper test completed and database restored');
+      const restoreCheck = await (await fetch(`${BASE_URL}/api/audit/verify`, {
+        headers: { Authorization: `Bearer ${adminToken}` },
+      })).json();
+      assert(restoreCheck.valid === true, 'Test fixture safely restored: live verification reports valid ledger');
     }
 
   } finally {

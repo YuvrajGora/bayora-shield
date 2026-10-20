@@ -383,11 +383,47 @@ function saveDatabase(): void {
   }
 }
 
+// SEC-05 & Fix 6: Clean up orphaned atomic temporary files on startup
+export function cleanupStaleTempFiles(dataDir: string, maxAgeMs = 60_000): number {
+  let cleanedCount = 0;
+  try {
+    if (!fs.existsSync(dataDir)) return 0;
+    const entries = fs.readdirSync(dataDir);
+    const now = Date.now();
+    for (const file of entries) {
+      // Strictly match only the application's atomic temporary file convention:
+      // bayora_shield_db.tmp.<timestamp>.<random>
+      const match = /^bayora_shield_db\.tmp\.(\d+)\.[a-z0-9]+$/i.exec(file);
+      if (match) {
+        const fileTimestamp = parseInt(match[1], 10);
+        const age = now - fileTimestamp;
+        // Purge only stale temporary files older than 1 minute (60,000 ms)
+        if (!isNaN(fileTimestamp) && age > maxAgeMs) {
+          const filePath = path.join(dataDir, file);
+          try {
+            fs.unlinkSync(filePath);
+            cleanedCount++;
+            console.log(`[Bayora Shield DB] Purged orphaned temporary file: ${file} (age: ${Math.round(age / 1000)}s)`);
+          } catch (unlinkErr) {
+            console.error(`[Bayora Shield DB] Failed to purge temporary file ${file}:`, unlinkErr);
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error('[Bayora Shield DB] Error scanning for stale temporary files:', err);
+  }
+  return cleanedCount;
+}
+
 function loadDatabase() {
   try {
     if (!fs.existsSync(DATA_DIR)) {
       fs.mkdirSync(DATA_DIR, { recursive: true });
     }
+
+    // Purge stale orphaned temporary files from prior ungraceful shutdowns (>1m old)
+    cleanupStaleTempFiles(DATA_DIR);
 
     if (fs.existsSync(DB_FILE)) {
       const raw = fs.readFileSync(DB_FILE, 'utf-8');
@@ -437,9 +473,9 @@ function loadDatabase() {
 }
 
 // SEC-03: Cryptographic Audit Hash-Chain (Tamper-Evident Ledger)
-const GENESIS_HASH = '0000000000000000000000000000000000000000000000000000000000000000';
+export const GENESIS_HASH = '0000000000000000000000000000000000000000000000000000000000000000';
 
-function computeAuditEntryHash(entry: {
+export function computeAuditEntryHash(entry: {
   id: string;
   timestamp: string;
   eventType: string;
@@ -521,8 +557,8 @@ function recordAuditLog(entry: Omit<AuditLogEntry, 'id' | 'timestamp' | 'previou
   return fullEntry;
 }
 
-function verifyAuditLogIntegrity(): AuditIntegrityReport {
-  const logs = db.auditLogs;
+export function verifyAuditLogIntegrity(logsToVerify: AuditLogEntry[] = db.auditLogs): AuditIntegrityReport {
+  const logs = logsToVerify;
   if (!logs || logs.length === 0) {
     return {
       valid: true,
@@ -532,13 +568,15 @@ function verifyAuditLogIntegrity(): AuditIntegrityReport {
     };
   }
 
-  // Iterate chronologically: from oldest (index length - 1) down to newest (index 0)
-  let expectedPrev = logs[logs.length - 1].previousHash || GENESIS_HASH;
+  // SEC-03 & Fix 2: Strictly enforce that the oldest entry (index logs.length - 1)
+  // links directly to the fixed GENESIS_HASH.
+  let expectedPrev = GENESIS_HASH;
 
   for (let i = logs.length - 1; i >= 0; i--) {
     const current = logs[i];
 
     if (current.previousHash !== expectedPrev) {
+      const isGenesis = i === logs.length - 1;
       return {
         valid: false,
         totalEntries: logs.length,
@@ -547,7 +585,9 @@ function verifyAuditLogIntegrity(): AuditIntegrityReport {
         brokenEntryId: current.id,
         expectedHash: expectedPrev,
         actualHash: current.previousHash,
-        reason: `Hash-chain sequence broken at entry "${current.id}" (index ${i}). Linkage mismatch.`,
+        reason: isGenesis
+          ? `Genesis linkage broken at root entry "${current.id}" (index ${i}). Expected fixed genesis hash ${GENESIS_HASH}, got "${current.previousHash}".`
+          : `Hash-chain sequence broken at entry "${current.id}" (index ${i}). Linkage mismatch.`,
         verifiedAt: new Date().toISOString(),
       };
     }
@@ -1145,7 +1185,7 @@ function decryptPayload(encrypted: { ciphertext: string; iv: string; tag: string
 function sanitizeRunForUser(run: TestRun, userRole: User['role']): TestRun {
   // CRITICAL SEC-02: Red Team MUST NOT receive Blue Team defensive rule details or sensitive match notes!
   if (userRole === 'red_team') {
-    return {
+    const sanitized: TestRun = {
       ...run,
       triggeredRules: [], // Redacted: zero rule leakage to Red Team
       notes: run.decision === 'BLOCKED'
@@ -1154,16 +1194,28 @@ function sanitizeRunForUser(run: TestRun, userRole: User['role']): TestRun {
         ? 'Heuristic flag noted. Processed under safe sandbox protocol.'
         : run.notes || 'Evaluated cleanly by Policy Gateway.',
     };
+    delete (sanitized as any).encryptedPayload;
+    return sanitized;
   }
 
-  // SEC-06: Blue Team CANNOT view active quarantined payloads while test is sealed!
+  // SEC-06 & Fix 3: Blue Team CANNOT view active quarantined payloads while test is sealed!
+  // Ensure encryptedPayload, ciphertext, IV, and auth tag are completely absent (not null)
   if (userRole === 'blue_team' && run.sealed) {
-    return {
+    const sanitized: TestRun = {
       ...run,
       prompt: '[SEALED_PAYLOAD_PROTECTED_DURING_TEST] (Payload quarantined by Bayora Shield Gateway)',
       mockAiResponse: null,
       notes: 'Active payload sealed in quarantine to preserve adversarial integrity and avoid preemptive rule biasing.',
     };
+    delete (sanitized as any).encryptedPayload;
+    return sanitized;
+  }
+
+  // Also remove internal encryptedPayload for non-admin roles even after release
+  if (userRole !== 'admin') {
+    const sanitized: TestRun = { ...run };
+    delete (sanitized as any).encryptedPayload;
+    return sanitized;
   }
 
   return run;
@@ -1958,6 +2010,16 @@ app.post('/api/system/reset', requireAuth, requireRoles('admin'), (req: Authenti
   res.json({
     message: 'Bayora Shield rules and test runs reset to factory demo state. Audit trail was preserved intact.',
     dbCounts: { rules: db.rules.length, runs: db.runs.length, audit: db.auditLogs.length },
+  });
+});
+
+// 9. Admin Database Reload Endpoint (for disk synchronization & test isolation)
+app.post('/api/system/reload', requireAuth, requireRoles('admin'), (req: AuthenticatedRequest, res) => {
+  loadDatabase();
+  res.json({
+    message: 'Database reloaded from disk.',
+    dbCounts: { rules: db.rules.length, runs: db.runs.length, audit: db.auditLogs.length },
+    isCorrupted: isDbCorrupted,
   });
 });
 
