@@ -134,4 +134,7 @@ export interface StorageInfo {
     testRuns: number;
     auditLogs: number;
   };
+  isCorrupted?: boolean;
+  corruptedBackupPath?: string | null;
+  atomicWritesEnabled?: boolean;
 }

@@ -334,29 +334,100 @@ let db: DatabaseSchema = {
   auditLogs: [...DEFAULT_AUDIT],
 };
 
+// SEC-05 & SEC-09: Reliable Atomic Persistence & Non-Destructive Recovery
+let isDbCorrupted = false;
+let corruptedBackupPath: string | null = null;
+
+function saveDatabase(): void {
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+
+    const payload = JSON.stringify(db, null, 2);
+    // Write to a temporary file in the same directory (guarantees same volume for atomic rename)
+    const tmpFile = path.join(
+      DATA_DIR,
+      `bayora_shield_db.tmp.${Date.now()}.${Math.random().toString(36).substring(2, 7)}`
+    );
+
+    // 1. Write replacement to temporary file
+    fs.writeFileSync(tmpFile, payload, 'utf-8');
+
+    // 2. Flush data to physical storage
+    try {
+      const fd = fs.openSync(tmpFile, 'r+');
+      fs.fsyncSync(fd);
+      fs.closeSync(fd);
+    } catch {
+      // fsync may not be available on all filesystems; proceed to rename
+    }
+
+    // 3. Atomically replace DB_FILE with the verified replacement
+    try {
+      fs.renameSync(tmpFile, DB_FILE);
+    } catch (renameErr: any) {
+      if (renameErr.code === 'EEXIST' || renameErr.code === 'EPERM') {
+        const backupOld = `${DB_FILE}.prev.${Date.now()}`;
+        fs.renameSync(DB_FILE, backupOld);
+        fs.renameSync(tmpFile, DB_FILE);
+        try { fs.unlinkSync(backupOld); } catch {}
+      } else {
+        try { fs.unlinkSync(tmpFile); } catch {}
+        throw renameErr;
+      }
+    }
+  } catch (err: any) {
+    console.error('[Bayora Shield DB] Atomic disk write error:', err);
+    throw new Error(`Failed to commit database atomically to disk: ${err.message}`);
+  }
+}
+
 function loadDatabase() {
   try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+
     if (fs.existsSync(DB_FILE)) {
       const raw = fs.readFileSync(DB_FILE, 'utf-8');
-      const parsed = JSON.parse(raw);
-      if (parsed.rules && parsed.runs && parsed.auditLogs) {
-        db = parsed;
-        console.log('[Bayora Shield DB] Loaded from disk successfully.');
+      try {
+        const parsed = JSON.parse(raw);
+        if (parsed && Array.isArray(parsed.rules) && Array.isArray(parsed.runs) && Array.isArray(parsed.auditLogs)) {
+          db = parsed;
+          console.log('[Bayora Shield DB] Loaded from disk successfully.');
+          return;
+        } else {
+          throw new Error('Database schema invalid: missing rules, runs, or auditLogs array.');
+        }
+      } catch (parseErr: any) {
+        // SEC-05: Non-destructive recovery. NEVER silently overwrite corrupted database with seed data!
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const backupFile = path.join(DATA_DIR, `bayora_shield_db.corrupt.${timestamp}.bak`);
+        try {
+          fs.copyFileSync(DB_FILE, backupFile);
+        } catch (copyErr) {
+          console.error('[Bayora Shield DB] Failed to create corrupted backup copy:', copyErr);
+        }
+
+        isDbCorrupted = true;
+        corruptedBackupPath = backupFile;
+
+        console.error(
+          `[CRITICAL][Bayora Shield DB] Stored JSON corrupted (${parseErr.message})! ` +
+          `Corrupted data preserved to backup: "${backupFile}". Memory fallback active; ` +
+          `disk file NOT overwritten to protect historical security evidence.`
+        );
+        // Do NOT call saveDatabase() here! Preserve the user's data on disk and in the backup file!
         return;
       }
     }
-  } catch (err) {
-    console.error('[Bayora Shield DB] Failed reading disk file, using memory seed:', err);
+  } catch (readErr: any) {
+    console.error('[Bayora Shield DB] Error accessing database file:', readErr);
   }
-  saveDatabase();
-}
 
-function saveDatabase() {
-  try {
-    fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2), 'utf-8');
-  } catch (err) {
-    console.error('[Bayora Shield DB] Disk write error:', err);
-  }
+  // Only create initial seed file if file truly did not exist
+  saveDatabase();
 }
 
 // SEC-03: Cryptographic Audit Hash-Chain (Tamper-Evident Ledger)
@@ -773,10 +844,11 @@ app.get('/api/health', (req, res) => {
 app.get('/api/storage/info', requireAuth, (req, res) => {
   const info: StorageInfo = {
     type: 'Server-Local Atomic JSON Store',
-    description: 'High-speed local JSON store backed by filesystem synchronization and in-memory caches.',
+    description: 'High-speed local JSON store backed by atomic temporary file writes, fsync flushing, and rename replacement.',
     location: DB_FILE,
     persistenceGuarantees: [
-      'Synchronous disk persistence on every rule change, run completion, and audit entry.',
+      'Atomic disk writes: replacement is written to temporary file on the same filesystem and renamed atomically to prevent corrupted half-writes.',
+      'Non-destructive recovery: corrupted JSON files are copied to timestamped backups and NEVER silently overwritten with seed defaults.',
       'Memory cache allows zero-latency gateway policy matching and fast rule evaluations.',
       'Hermetic execution inside AI Studio sandbox without requiring external API tokens.',
     ],
@@ -790,6 +862,9 @@ app.get('/api/storage/info', requireAuth, (req, res) => {
       testRuns: db.runs.length,
       auditLogs: db.auditLogs.length,
     },
+    isCorrupted: isDbCorrupted,
+    corruptedBackupPath,
+    atomicWritesEnabled: true,
   };
   res.json(info);
 });

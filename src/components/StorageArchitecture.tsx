@@ -36,6 +36,17 @@ export const StorageArchitecture: React.FC = () => {
         </p>
       </div>
 
+      {/* Corruption Detection Alert */}
+      {info?.isCorrupted && (
+        <div className="p-3 bg-amber-950/40 border border-amber-800 text-amber-200 rounded text-xs flex items-center gap-2">
+          <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0" />
+          <div>
+            <strong>Storage Alert: Corrupted Database Detected.</strong> The damaged database was backed up to{' '}
+            <code className="text-amber-300 font-mono">{info.corruptedBackupPath}</code> without overwriting existing data.
+          </div>
+        </div>
+      )}
+
       {/* Persistence Architecture Card */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <div className="lg:col-span-8 space-y-4">

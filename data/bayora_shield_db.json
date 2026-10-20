@@ -148,6 +148,98 @@
   ],
   "auditLogs": [
     {
+      "id": "audit-1792476007092-6u85l",
+      "timestamp": "2026-10-20T06:00:07.092Z",
+      "eventType": "RULE_DELETED",
+      "severity": "WARNING",
+      "actorEmail": "admin@bayora.shield",
+      "actorRole": "admin",
+      "targetResource": "/api/rules/rule-mvg9xmsk",
+      "decision": "RECORDED",
+      "details": "Deleted rule \"Atomic Persist Test 1792476007075\".",
+      "metadata": {
+        "ruleId": "rule-mvg9xmsk"
+      },
+      "previousHash": "8c50a4de95f79a2c527a464e0ad6d704830876f69029c7e32e4f011149b61f41",
+      "hash": "55e8c47418165472138c4c8e3a53e69b6481223b618876b9d09d012293cd3fb0"
+    },
+    {
+      "id": "audit-1792476007080-3637v",
+      "timestamp": "2026-10-20T06:00:07.080Z",
+      "eventType": "RULE_CREATED",
+      "severity": "INFO",
+      "actorEmail": "admin@bayora.shield",
+      "actorRole": "admin",
+      "targetResource": "/api/rules/rule-mvg9xmsk",
+      "decision": "RECORDED",
+      "details": "Created new defensive rule \"Atomic Persist Test 1792476007075\" (BLOCK, pattern: \"atomic_test_token\").",
+      "metadata": {
+        "ruleId": "rule-mvg9xmsk",
+        "ruleName": "Atomic Persist Test 1792476007075"
+      },
+      "previousHash": "9da120108fcd37c82527a4d1535b9a591b45479a4fc0c9a03759681302b78a7c",
+      "hash": "8c50a4de95f79a2c527a464e0ad6d704830876f69029c7e32e4f011149b61f41"
+    },
+    {
+      "id": "audit-1792476007060-li2rt",
+      "timestamp": "2026-10-20T06:00:07.060Z",
+      "eventType": "SESSION_LOGIN",
+      "severity": "INFO",
+      "actorEmail": "admin@bayora.shield",
+      "actorRole": "admin",
+      "targetResource": "/api/auth/login",
+      "decision": "PERMITTED",
+      "details": "User Alex Vance (admin@bayora.shield) authenticated with role [admin]. Cryptographic session established.",
+      "previousHash": "d2d62b2c687a5ebe7a72df8eef822a7529eaf6eb8230627326972538fd6254d8",
+      "hash": "9da120108fcd37c82527a4d1535b9a591b45479a4fc0c9a03759681302b78a7c"
+    },
+    {
+      "id": "audit-1792475984326-oc4ns",
+      "timestamp": "2026-10-20T05:59:44.326Z",
+      "eventType": "RULE_DELETED",
+      "severity": "WARNING",
+      "actorEmail": "admin@bayora.shield",
+      "actorRole": "admin",
+      "targetResource": "/api/rules/rule-mvg9x586",
+      "decision": "RECORDED",
+      "details": "Deleted rule \"Atomic Persist Test 1792475984309\".",
+      "metadata": {
+        "ruleId": "rule-mvg9x586"
+      },
+      "previousHash": "d368277bb7954f57dd1a972f001a6c3a1b2a0dd03f72f6a2ec4bb464bef0c9bb",
+      "hash": "d2d62b2c687a5ebe7a72df8eef822a7529eaf6eb8230627326972538fd6254d8"
+    },
+    {
+      "id": "audit-1792475984314-vaurv",
+      "timestamp": "2026-10-20T05:59:44.314Z",
+      "eventType": "RULE_CREATED",
+      "severity": "INFO",
+      "actorEmail": "admin@bayora.shield",
+      "actorRole": "admin",
+      "targetResource": "/api/rules/rule-mvg9x586",
+      "decision": "RECORDED",
+      "details": "Created new defensive rule \"Atomic Persist Test 1792475984309\" (BLOCK, pattern: \"atomic_test_token\").",
+      "metadata": {
+        "ruleId": "rule-mvg9x586",
+        "ruleName": "Atomic Persist Test 1792475984309"
+      },
+      "previousHash": "df75d2a3d2a8bc0ac2843abccb8e62801a7ffa69a3b00833a72902fd05e59ee9",
+      "hash": "d368277bb7954f57dd1a972f001a6c3a1b2a0dd03f72f6a2ec4bb464bef0c9bb"
+    },
+    {
+      "id": "audit-1792475984293-uuxay",
+      "timestamp": "2026-10-20T05:59:44.293Z",
+      "eventType": "SESSION_LOGIN",
+      "severity": "INFO",
+      "actorEmail": "admin@bayora.shield",
+      "actorRole": "admin",
+      "targetResource": "/api/auth/login",
+      "decision": "PERMITTED",
+      "details": "User Alex Vance (admin@bayora.shield) authenticated with role [admin]. Cryptographic session established.",
+      "previousHash": "a30cbe967d2429263a0ad3919441e4693ad66079ad0c49e084a3c903518e60b1",
+      "hash": "df75d2a3d2a8bc0ac2843abccb8e62801a7ffa69a3b00833a72902fd05e59ee9"
+    },
+    {
       "id": "audit-1792441416361-hrdcs",
       "timestamp": "2026-10-19T20:23:36.361Z",
       "eventType": "RULE_DELETED",
