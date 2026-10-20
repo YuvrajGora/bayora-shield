@@ -210,7 +210,7 @@ npm test
 | Command | Purpose |
 | :--- | :--- |
 | `npm run dev` | Launch the Express server and Vite development middleware. |
-| `npm test` | Run the automated 33-point security integration test suite via `tests/security.test.ts`. |
+| `npm test` | Run the automated 44-point security integration test suite via `tests/security.test.ts`. |
 | `npm run lint` | Run TypeScript compiler type-check (`tsc --noEmit`). |
 | `npm run build` | Build the production client bundle into `dist/`. |
 | `npm run start` | Run the server in production mode serving static files. |
@@ -223,6 +223,6 @@ npm test
 To maintain honest, engineering-grade clarity during hackathon evaluation:
 
 1. **Software RBAC Scope:** Role-based access boundaries are enforced at the application layer via Express middleware and cryptographically secure tokens. They do not constitute hardware-isolated hypervisor or enclave boundaries.
-2. **Local Cryptographic Storage vs. Hardware WORM:** Audit log immutability is guaranteed cryptographically via SHA-256 hash chaining and verified in software. It does not utilize write-once-read-many (WORM) hardware optical drives or cloud ledger services (e.g., AWS QLDB).
+2. **Local Cryptographic Storage vs. External Checkpointing:** Audit log integrity is guaranteed cryptographically via SHA-256 hash chaining anchored to a fixed `GENESIS_HASH`. Verification strictly detects inline tampering, deleted middle entries, sequence reordering, and forged genesis values. However, because hash chaining is computed in software without an external Hardware Security Module (HSM) or remote ledger checkpoint, a privileged attacker with direct physical or root write access to the local database file could theoretically rewrite the entire history from scratch and recalculate all hashes downstream. Full defense against total-prefix rewrite or privileged offline truncation requires an external trusted checkpoint, append-only remote syslog, or hardware WORM storage.
 3. **Payload Quarantine Isolation:** Payloads are encrypted at rest with AES-256-GCM and segregated via server-side authorization. This is an application-level quarantine protocol, not zero-knowledge client-side encryption.
 4. **Deterministic Mock AI Simulator:** The platform evaluates prompts against policy rules and responds via a deterministic offline mock AI simulator without requiring external paid API keys (OpenAI/Anthropic/Google).
