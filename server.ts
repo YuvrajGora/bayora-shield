@@ -28,8 +28,12 @@ const app = express();
 app.use(express.json());
 
 // Persistent storage setup
-const DATA_DIR = path.resolve(__dirname, 'data');
-const DB_FILE = path.join(DATA_DIR, 'bayora_shield_db.json');
+const DATA_DIR = process.env.DATA_DIR
+  ? path.resolve(process.env.DATA_DIR)
+  : path.resolve(__dirname, 'data');
+const DB_FILE = process.env.DB_FILE
+  ? path.resolve(process.env.DB_FILE)
+  : path.join(DATA_DIR, 'bayora_shield_db.json');
 
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -424,6 +428,19 @@ function loadDatabase() {
 
     // Purge stale orphaned temporary files from prior ungraceful shutdowns (>1m old)
     cleanupStaleTempFiles(DATA_DIR);
+
+    // If persistent disk is freshly mounted and empty, initialize from committed baseline seed
+    if (!fs.existsSync(DB_FILE)) {
+      const seedFile = path.resolve(__dirname, 'src', 'data', 'seed_bayora_shield_db.json');
+      if (fs.existsSync(seedFile)) {
+        try {
+          fs.copyFileSync(seedFile, DB_FILE);
+          console.log('[Bayora Shield DB] Populated empty persistent volume from baseline seed.');
+        } catch (copyErr) {
+          console.error('[Bayora Shield DB] Failed to seed persistent volume:', copyErr);
+        }
+      }
+    }
 
     if (fs.existsSync(DB_FILE)) {
       const raw = fs.readFileSync(DB_FILE, 'utf-8');
