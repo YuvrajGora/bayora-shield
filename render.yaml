@@ -2,20 +2,14 @@ services:
   - type: web
     name: bayora-shield
     runtime: node
-    plan: starter
+    plan: free
     branch: security/phase-2-hardening
     buildCommand: npm install && npm run build
     startCommand: npm start
     healthCheckPath: /api/health
-    disk:
-      name: bayora-shield-data
-      mountPath: /opt/render/project/src/data
-      sizeGB: 1
     envVars:
       - key: NODE_ENV
         value: production
-      - key: DATA_DIR
-        value: /opt/render/project/src/data
       - key: SESSION_DURATION_HOURS
         value: 8
       - key: PAYLOAD_ENCRYPTION_KEY
