@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: bayora-shield
+    runtime: node
+    plan: free
+    branch: security/phase-2-hardening
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SESSION_DURATION_HOURS
+        value: 8
+      - key: PAYLOAD_ENCRYPTION_KEY
+        generateValue: true
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: RED_TEAM_PASSWORD
+        sync: false
+      - key: BLUE_TEAM_PASSWORD
+        sync: false

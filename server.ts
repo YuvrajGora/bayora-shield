@@ -915,9 +915,50 @@ app.get('/api/storage/info', requireAuth, (req, res) => {
   res.json(info);
 });
 
-// 2. Auth Endpoints
+// 2. Auth Endpoints & Brute-Force Rate Limiting Defense
+interface FailedLoginTracker {
+  count: number;
+  firstAttempt: number;
+}
+const failedLoginAttempts = new Map<string, FailedLoginTracker>();
+const LOGIN_RATE_LIMIT_MAX = 10;
+const LOGIN_RATE_LIMIT_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
+
+function getClientIp(req: Request): string {
+  const forwarded = req.headers['x-forwarded-for'];
+  if (typeof forwarded === 'string') {
+    return forwarded.split(',')[0].trim();
+  }
+  return req.ip || req.socket?.remoteAddress || 'unknown';
+}
+
 app.post('/api/auth/login', (req, res) => {
   const { role, email, password } = req.body;
+  const clientIp = getClientIp(req);
+  const now = Date.now();
+
+  // SEC-11: Brute-force & PBKDF2 compute exhaustion defense
+  const tracker = failedLoginAttempts.get(clientIp);
+  if (tracker) {
+    if (now - tracker.firstAttempt > LOGIN_RATE_LIMIT_WINDOW_MS) {
+      failedLoginAttempts.delete(clientIp);
+    } else if (tracker.count >= LOGIN_RATE_LIMIT_MAX) {
+      recordAuditLog({
+        eventType: 'ACCESS_DENIAL',
+        severity: 'CRITICAL',
+        actorEmail: email || 'rate-limited@throttled',
+        actorRole: 'anonymous',
+        targetResource: '/api/auth/login',
+        decision: 'DENIED',
+        details: `Brute-force rate limit triggered on /api/auth/login: IP ${clientIp} exceeded ${LOGIN_RATE_LIMIT_MAX} failed attempts within 5 minutes. Request throttled.`,
+      });
+      return res.status(429).json({
+        error: 'Too many failed authentication attempts. Please wait 5 minutes before trying again.',
+        code: 'TOO_MANY_REQUESTS',
+        retryAfterSeconds: Math.ceil((LOGIN_RATE_LIMIT_WINDOW_MS - (now - tracker.firstAttempt)) / 1000),
+      });
+    }
+  }
 
   if (!password || typeof password !== 'string') {
     return res.status(400).json({ error: 'Password is required for authentication.', code: 'MISSING_PASSWORD' });
@@ -932,6 +973,14 @@ app.post('/api/auth/login', (req, res) => {
   }
 
   if (!account || !verifyPassword(password, account.salt, account.passwordHash)) {
+    // Increment failed attempt counter for client IP
+    const current = failedLoginAttempts.get(clientIp);
+    if (!current || now - current.firstAttempt > LOGIN_RATE_LIMIT_WINDOW_MS) {
+      failedLoginAttempts.set(clientIp, { count: 1, firstAttempt: now });
+    } else {
+      current.count++;
+    }
+
     recordAuditLog({
       eventType: 'ACCESS_DENIAL',
       severity: 'WARNING',
@@ -944,9 +993,11 @@ app.post('/api/auth/login', (req, res) => {
     return res.status(401).json({ error: 'Invalid credentials. Please verify your role/email and password.', code: 'INVALID_CREDENTIALS' });
   }
 
+  // Clear failed attempts upon successful authentication
+  failedLoginAttempts.delete(clientIp);
+
   // Create unpredictable, cryptographically random session token (256-bit entropy)
   const sessionToken = crypto.randomBytes(32).toString('hex');
-  const now = Date.now();
   const expiresAt = now + SESSION_TTL_MS;
 
   activeSessions.set(sessionToken, {
@@ -1654,14 +1705,14 @@ app.post('/api/tests/run', requireAuth, requireRoles('admin'), async (req: Authe
   const redLoginRes = await fetch(`${baseUrl}/api/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ role: 'red_team', password: 'bayora-red-2026!' }),
+    body: JSON.stringify({ role: 'red_team', password: RED_TEAM_PASSWORD }),
   });
   const redToken = (await redLoginRes.json()).token;
 
   const blueLoginRes = await fetch(`${baseUrl}/api/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ role: 'blue_team', password: 'bayora-blue-2026!' }),
+    body: JSON.stringify({ role: 'blue_team', password: BLUE_TEAM_PASSWORD }),
   });
   const blueToken = (await blueLoginRes.json()).token;
 
